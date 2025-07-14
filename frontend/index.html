@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Liquid Glass Map System - Travel Magazine Edition</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" 
+          integrity="sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw==" 
+          crossorigin="anonymous" referrerpolicy="no-referrer" />
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Loading Animation -->
+    <div id="loading" class="loading">
+        <div class="loading-ring"></div>
+    </div>
+
+    <!-- Map Container -->
+    <div id="map"></div>
+
+    <!-- Top Navigation Overlay -->
+    <div class="map-overlay">
+        <!-- Search Panel -->
+        <div class="glass-panel search-container">
+            <input type="text" class="search-input" placeholder="Search for places..." id="searchInput">
+            <button class="filter-btn" onclick="searchPlaces()">🔍</button>
+            <button class="filter-btn" onclick="toggleAdvancedFilters()">⚙️ Filters</button>
+        </div>
+
+        <!-- Category Filter Buttons -->
+        <div class="glass-panel filter-buttons">
+            <button class="filter-btn active" onclick="filterSpots('all')">All</button>
+            <button class="filter-btn" onclick="filterSpots('restaurant')">🍽️ Food</button>
+            <button class="filter-btn" onclick="filterSpots('museum')">🏛️ Culture</button>
+            <button class="filter-btn" onclick="filterSpots('park')">🌳 Nature</button>
+            <button class="filter-btn" onclick="filterSpots('shopping')">🛍️ Shopping</button>
+        </div>
+    </div>
+
+    <!-- Authentication Modal -->
+    <div class="modal-overlay" id="authModal">
+        <div class="modal auth-modal">
+            <button class="modal-close" onclick="Auth.hideLoginModal()">×</button>
+            
+            <h2>Welcome to Liquid Glass Map</h2>
+            
+            <!-- Tab Navigation -->
+            <div class="auth-tabs">
+                <button class="auth-tab active" data-tab="login" onclick="Auth.switchAuthTab('login')">Login</button>
+                <button class="auth-tab" data-tab="register" onclick="Auth.switchAuthTab('register')">Register</button>
+            </div>
+            
+            <!-- Login Form -->
+            <form id="loginForm" class="auth-form active" onsubmit="Auth.handleLogin(event)">
+                <div class="form-group">
+                    <label for="loginEmail">Email</label>
+                    <input type="email" id="loginEmail" name="email" required 
+                           placeholder="your@email.com" class="form-input">
+                </div>
+                
+                <div class="form-group">
+                    <label for="loginPassword">Password</label>
+                    <input type="password" id="loginPassword" name="password" required 
+                           placeholder="••••••••" class="form-input">
+                </div>
+                
+                <div class="error-message" style="display: none;"></div>
+                
+                <button type="submit" class="submit-btn">Login</button>
+                
+                <p class="form-footer">
+                    Don't have an account? 
+                    <a href="#" onclick="Auth.switchAuthTab('register'); return false;">Register</a>
+                </p>
+            </form>
+            
+            <!-- Register Form -->
+            <form id="registerForm" class="auth-form" onsubmit="Auth.handleRegister(event)">
+                <div class="form-group">
+                    <label for="registerName">Full Name</label>
+                    <input type="text" id="registerName" name="fullName" required 
+                           placeholder="John Doe" class="form-input">
+                </div>
+                
+                <div class="form-group">
+                    <label for="registerEmail">Email</label>
+                    <input type="email" id="registerEmail" name="email" required 
+                           placeholder="your@email.com" class="form-input">
+                </div>
+                
+                <div class="form-group">
+                    <label for="registerPassword">Password</label>
+                    <input type="password" id="registerPassword" name="password" required 
+                           placeholder="••••••••" class="form-input" minlength="6">
+                </div>
+                
+                <div class="form-group">
+                    <label for="confirmPassword">Confirm Password</label>
+                    <input type="password" id="confirmPassword" name="confirmPassword" required 
+                           placeholder="••••••••" class="form-input" minlength="6">
+                </div>
+                
+                <div class="error-message" style="display: none;"></div>
+                
+                <button type="submit" class="submit-btn">Create Account</button>
+                
+                <p class="form-footer">
+                    Already have an account? 
+                    <a href="#" onclick="Auth.switchAuthTab('login'); return false;">Login</a>
+                </p>
+            </form>
+        </div>
+    </div>
+
+    <!-- Admin Dashboard Modal -->
+    <div class="modal-overlay" id="adminDashboard">
+        <div class="modal admin-dashboard-modal">
+            <button class="modal-close" onclick="hideAdminDashboard()">×</button>
+            
+            <h2>Admin Dashboard</h2>
+            
+            <div class="admin-stats">
+                <div class="stat-card glass-panel">
+                    <h3>Total Spots</h3>
+                    <p class="stat-value" id="totalSpots">0</p>
+                </div>
+                <div class="stat-card glass-panel">
+                    <h3>Total Users</h3>
+                    <p class="stat-value" id="totalUsers">0</p>
+                </div>
+                <div class="stat-card glass-panel">
+                    <h3>Recent Activities</h3>
+                    <p class="stat-value" id="recentActivities">0</p>
+                </div>
+            </div>
+            
+            <div class="admin-sections">
+                <button class="admin-section-btn" onclick="showUserManagement()">
+                    <span>👥</span> Manage Users
+                </button>
+                <button class="admin-section-btn" onclick="showActivityLogs()">
+                    <span>📋</span> Activity Logs
+                </button>
+                <button class="admin-section-btn" onclick="showSpotManagement()">
+                    <span>📍</span> Manage Spots
+                </button>
+            </div>
+            
+            <div id="adminContent" class="admin-content">
+                <!-- Dynamic content will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Right Controls -->
+    <div class="top-right-controls">
+        <!-- User Info (when logged in) -->
+        <div id="userInfo" class="user-info glass-panel" style="display: none;">
+            <div class="user-avatar">👤</div>
+            <div class="user-details">
+                <span class="user-email"></span>
+                <span class="user-role"></span>
+            </div>
+        </div>
+
+        <!-- Login Button (when logged out) -->
+        <button id="loginBtn" class="auth-btn glass-panel" onclick="Auth.showLoginModal()">
+            <span>🔐</span> Login
+        </button>
+
+        <!-- Admin Panel (admin only) -->
+        <div id="adminPanel" class="admin-panel" style="display: none;">
+            <button class="data-toggle-btn glass-panel" onclick="toggleDataModal()">
+                <span>📊</span> Manage Data
+            </button>
+            <button class="admin-btn glass-panel" onclick="showAdminDashboard()">
+                <span>⚙️</span> Admin
+            </button>
+        </div>
+
+        <!-- Logout Button (when logged in) -->
+        <button id="logoutBtn" class="auth-btn glass-panel" style="display: none;" onclick="Auth.logout()">
+            <span>🚪</span> Logout
+        </button>
+    </div>
+
+    <!-- Advanced Filters Panel -->
+    <div class="advanced-filters" id="advancedFilters">
+        <h4 style="color: white; margin-bottom: 20px;">Advanced Filters</h4>
+        
+        <!-- Price Range Filter -->
+        <div class="filter-section">
+            <h4>Price Range</h4>
+            <div class="price-slider" id="priceSlider">
+                <div class="price-slider-fill"></div>
+            </div>
+            <div class="price-inputs">
+                <input type="number" class="price-input" id="minPrice" placeholder="Min €" value="0">
+                <span style="color: white;">-</span>
+                <input type="number" class="price-input" id="maxPrice" placeholder="Max €" value="200">
+            </div>
+        </div>
+
+        <!-- Rating Filter -->
+        <div class="filter-section">
+            <h4>Rating</h4>
+            <div class="checkbox-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" value="4.5" onchange="applyAdvancedFilters()">
+                    4.5+ Stars
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" value="4.0" onchange="applyAdvancedFilters()">
+                    4.0+ Stars
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" value="3.5" onchange="applyAdvancedFilters()">
+                    3.5+ Stars
+                </label>
+            </div>
+        </div>
+
+        <!-- Features Filter -->
+        <div class="filter-section">
+            <h4>Features</h4>
+            <div class="checkbox-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="openNow" onchange="applyAdvancedFilters()">
+                    Open Now
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="editorPick" onchange="applyAdvancedFilters()">
+                    Editor's Picks Only
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="hasVideo" onchange="applyAdvancedFilters()">
+                    Has Video Content
+                </label>
+            </div>
+        </div>
+
+        <!-- Distance Filter -->
+        <div class="filter-section">
+            <h4>Distance</h4>
+            <select class="price-input" id="distanceFilter" onchange="applyAdvancedFilters()" style="width: 100%;">
+                <option value="all">Any Distance</option>
+                <option value="1">Within 1 km</option>
+                <option value="2">Within 2 km</option>
+                <option value="5">Within 5 km</option>
+                <option value="10">Within 10 km</option>
+            </select>
+        </div>
+
+        <!-- Filter Actions -->
+        <div class="filter-actions">
+            <button class="filter-btn" onclick="resetFilters()">Reset</button>
+            <button class="filter-btn active" onclick="toggleAdvancedFilters()">Apply</button>
+        </div>
+    </div>
+
+    <!-- Spots Panel (Bottom Cards) -->
+    <div class="spots-panel" id="spotsPanel"></div>
+
+    <!-- Data Management Modal -->
+    <div class="modal-overlay" id="dataModal">
+        <div class="modal">
+            <h3>Data Management</h3>
+            
+            <!-- Tab Navigation -->
+            <div class="import-tabs">
+                <button class="import-tab active" onclick="switchTab('import')">Import</button>
+                <button class="import-tab" onclick="switchTab('export')">Export</button>
+                <button class="import-tab" onclick="switchTab('sample')">Sample Data</button>
+            </div>
+
+            <!-- Import Status Message -->
+            <div id="importStatus" class="import-status">
+                <p></p>
+            </div>
+
+            <!-- Import Tab Content -->
+            <div id="import-content" class="import-content active">
+                <div class="file-drop-zone" id="dropZone">
+                    <p>📁 Drag and drop your JSON or CSV file here</p>
+                    <p>or <span onclick="document.getElementById('fileInput').click()">browse files</span></p>
+                    <input type="file" id="fileInput" accept=".json,.csv" style="display: none;" onchange="handleFileSelect(event)">
+                </div>
+
+                <h4 style="color: white; margin-bottom: 10px;">Or paste JSON data:</h4>
+                <textarea id="jsonInput" placeholder="Paste your JSON data here..."></textarea>
+                <button class="filter-btn active" onclick="importFromJSON()">Import JSON</button>
+
+                <div class="template-info">
+                    <h5>JSON Template:</h5>
+                    <code id="jsonTemplate"></code>
+                </div>
+            </div>
+
+            <!-- Export Tab Content -->
+            <div id="export-content" class="import-content">
+                <h4 style="color: white; margin-bottom: 20px;">Export current map data</h4>
+                <div style="display: flex; gap: 10px;">
+                    <button class="filter-btn active" onclick="exportData('json')">Export as JSON</button>
+                    <button class="filter-btn active" onclick="exportData('csv')">Export as CSV</button>
+                </div>
+
+                <h4 style="color: white; margin: 30px 0 20px;">Download templates</h4>
+                <div style="display: flex; gap: 10px;">
+                    <button class="filter-btn" onclick="downloadTemplate('json')">JSON Template</button>
+                    <button class="filter-btn" onclick="downloadTemplate('csv')">CSV Template</button>
+                </div>
+            </div>
+
+            <!-- Sample Data Tab Content -->
+            <div id="sample-content" class="import-content">
+                <h4 style="color: white; margin-bottom: 20px;">Load Sample Data</h4>
+                <p style="color: rgba(255, 255, 255, 0.8); margin-bottom: 20px;">
+                    This will load sample tourist spots in Paris. Your current data will be replaced.
+                </p>
+                <button class="filter-btn active" onclick="loadSampleData()">Load Sample Data</button>
+            </div>
+
+            <!-- Modal Footer -->
+            <div style="display: flex; justify-content: flex-end; margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+                <button class="filter-btn" onclick="closeDataModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" 
+            integrity="sha512-puJW3E/qXDqYp9IfhAI54BJEaWIfloJ7JWs7OeD5i6ruC9JZL1gERT1wjtwXFlh7CjE7ZJ+/vcRZRkIYIb6p4g==" 
+            crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    
+    <!-- Configuration -->
+    <script src="config.js"></script>
+    
+    <!-- Utilities -->
+    <script src="utils.js"></script>
+    
+    <!-- Cache System -->
+    <script src="cache.js"></script>
+    
+    <!-- Notifications -->
+    <script src="notifications.js"></script>
+    
+    <!-- Authentication -->
+    <script src="auth.js"></script>
+    
+    <!-- API Client -->
+    <script src="api.js"></script>
+    
+    <!-- App Data -->
+    <script src="data.js"></script>
+    
+    <!-- Main App JS -->
+    <script src="app.js"></script>
+    
+    <!-- Admin Functions -->
+    <script src="admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: liquid_glass_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${DB_NAME:-liquid_glass_map}
+      MYSQL_USER: ${DB_USER:-mapuser}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-mappassword}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/database-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    networks:
+      - liquid_glass_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: liquid_glass_backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-3000}
+      DB_HOST: mysql
+      DB_USER: ${DB_USER:-mapuser}
+      DB_PASSWORD: ${DB_PASSWORD:-mappassword}
+      DB_NAME: ${DB_NAME:-liquid_glass_map}
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-this}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+    ports:
+      - "${API_PORT:-3000}:3000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    networks:
+      - liquid_glass_network
+    command: >
+      sh -c "
+        echo 'Waiting for MySQL to be ready...' &&
+        sleep 10 &&
+        npm run seed &&
+        npm start
+      "
+
+  # Frontend (Nginx)
+  frontend:
+    image: nginx:alpine
+    container_name: liquid_glass_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+      - "${FRONTEND_SSL_PORT:-443}:443"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    networks:
+      - liquid_glass_network
+    depends_on:
+      - backend
+
+  # PhpMyAdmin (optional, for database management)
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: liquid_glass_phpmyadmin
+    restart: unless-stopped
+    depends_on:
+      - mysql
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_ARBITRARY: 1
+    ports:
+      - "${PMA_PORT:-8080}:80"
+    networks:
+      - liquid_glass_network
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  liquid_glass_network:
+    driver: bridge

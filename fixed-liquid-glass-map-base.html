@@ -1,0 +1,2228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Liquid Glass Map System - Travel Magazine Edition</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" integrity="sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" integrity="sha512-puJW3E/qXDqYp9IfhAI54BJEaWIfloJ7JWs7OeD5i6ruC9JZL1gERT1wjtwXFlh7CjE7ZJ+/vcRZRkIYIb6p4g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --glass-bg: rgba(255, 255, 255, 0.1);
+            --glass-border: rgba(255, 255, 255, 0.2);
+            --primary: #007AFF;
+            --text-primary: #1d1d1f;
+            --text-secondary: #86868b;
+            --editor-pick: #FF6B6B;
+            --success: #34C759;
+            --warning: #FF9500;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+            background: #000;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        #map {
+            height: 100vh;
+            width: 100vw;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* Custom map controls */
+        .map-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 15px;
+            pointer-events: none;
+            flex-wrap: wrap;
+        }
+
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            pointer-events: all;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .glass-panel:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15);
+        }
+
+        .search-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            min-width: 350px;
+            flex: 1;
+        }
+
+        .search-input {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 12px 20px;
+            color: white;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .search-input::placeholder {
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .search-input:focus {
+            outline: none;
+            background: rgba(255, 255, 255, 0.15);
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+        }
+
+        .filter-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 10px 20px;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+
+        .filter-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: scale(1.05);
+        }
+
+        .filter-btn.active {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        /* Data Management Panel */
+        .data-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1001;
+        }
+
+        .data-toggle-btn {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 10px 16px;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .data-toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: scale(1.05);
+        }
+
+        /* Advanced Filters Panel */
+        .advanced-filters {
+            position: absolute;
+            top: 80px;
+            left: 20px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            display: none;
+            max-width: 350px;
+            width: calc(100vw - 40px);
+        }
+
+        .advanced-filters.active {
+            display: block;
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .filter-section {
+            margin-bottom: 20px;
+        }
+
+        .filter-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .filter-section h4 {
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .price-slider {
+            position: relative;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            margin: 20px 0;
+        }
+
+        .price-slider-fill {
+            position: absolute;
+            height: 100%;
+            background: var(--primary);
+            border-radius: 3px;
+            left: 0;
+            right: 0;
+        }
+
+        .price-inputs {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .price-input {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: white;
+            font-size: 14px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .checkbox-label:hover {
+            color: white;
+        }
+
+        .checkbox-label input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--primary);
+            cursor: pointer;
+        }
+
+        .filter-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* Import/Export Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+            z-index: 2000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+            animation: modalIn 0.3s ease;
+        }
+
+        @keyframes modalIn {
+            from {
+                opacity: 0;
+                transform: scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .modal h3 {
+            color: white;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        .import-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 10px;
+        }
+
+        .import-tab {
+            background: transparent;
+            border: none;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 16px;
+            cursor: pointer;
+            padding: 10px 20px;
+            transition: all 0.3s ease;
+            border-radius: 8px;
+        }
+
+        .import-tab:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .import-tab.active {
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .import-content {
+            display: none;
+        }
+
+        .import-content.active {
+            display: block;
+        }
+
+        .file-drop-zone {
+            border: 2px dashed rgba(255, 255, 255, 0.3);
+            border-radius: 16px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+
+        .file-drop-zone:hover {
+            border-color: var(--primary);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .file-drop-zone.drag-over {
+            border-color: var(--primary);
+            background: rgba(0, 122, 255, 0.1);
+        }
+
+        .file-drop-zone p {
+            color: rgba(255, 255, 255, 0.8);
+            margin-bottom: 10px;
+        }
+
+        .file-drop-zone span {
+            color: var(--primary);
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 200px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 15px;
+            color: white;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 14px;
+            resize: vertical;
+            margin-bottom: 20px;
+        }
+
+        .template-info {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .template-info h5 {
+            color: var(--primary);
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .template-info code {
+            display: block;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 8px;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 12px;
+            overflow-x: auto;
+        }
+
+        .import-status {
+            display: none;
+            background: rgba(52, 199, 89, 0.1);
+            border: 1px solid rgba(52, 199, 89, 0.3);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .import-status.error {
+            background: rgba(255, 59, 48, 0.1);
+            border-color: rgba(255, 59, 48, 0.3);
+        }
+
+        .import-status p {
+            color: var(--success);
+            margin: 0;
+        }
+
+        .import-status.error p {
+            color: #FF3B30;
+        }
+
+        /* Floating spots panel */
+        .spots-panel {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            display: flex;
+            gap: 15px;
+            max-width: 90vw;
+            overflow-x: auto;
+            padding: 10px;
+            scroll-behavior: smooth;
+        }
+
+        .spots-panel::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        .spots-panel::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .spots-panel::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+        }
+
+        .spot-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 16px;
+            min-width: 280px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            flex-shrink: 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .spot-card.editor-pick {
+            border-color: var(--editor-pick);
+        }
+
+        .editor-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: var(--editor-pick);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .spot-card:hover {
+            transform: translateY(-5px) scale(1.02);
+            background: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+        }
+
+        .spot-card h3 {
+            color: white;
+            font-size: 18px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .spot-card p {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+            line-height: 1.5;
+            margin-bottom: 12px;
+        }
+
+        .spot-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .spot-category {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .spot-rating {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            color: #FFD700;
+            font-size: 14px;
+        }
+
+        .spot-price {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 13px;
+        }
+
+        /* Status indicators */
+        .spot-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 8px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--success);
+        }
+
+        .status-dot.closed {
+            background: var(--warning);
+        }
+
+        /* Custom markers */
+        .custom-marker {
+            width: 40px;
+            height: 40px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 2px solid var(--primary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            animation: pulse 2s infinite;
+            position: relative;
+        }
+
+        .custom-marker.editor-pick {
+            border-color: var(--editor-pick);
+        }
+
+        .custom-marker:hover {
+            transform: scale(1.2);
+            background: var(--primary);
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(0, 122, 255, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(0, 122, 255, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(0, 122, 255, 0);
+            }
+        }
+
+        /* Enhanced Popup styles */
+        .leaflet-popup {
+            margin-bottom: 20px;
+        }
+
+        .leaflet-popup-content-wrapper {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            padding: 0;
+            width: 420px !important;
+        }
+
+        .leaflet-popup-content {
+            margin: 0;
+            color: white;
+            width: 100% !important;
+        }
+
+        .leaflet-popup-tip {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+        }
+
+        .leaflet-popup-close-button {
+            color: white !important;
+            font-size: 24px !important;
+            padding: 8px 12px !important;
+            top: 10px !important;
+            right: 10px !important;
+            width: auto !important;
+            height: auto !important;
+        }
+
+        /* Media Gallery Styles */
+        .popup-content {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .media-gallery {
+            position: relative;
+            width: 100%;
+            height: 250px;
+            overflow: hidden;
+            border-radius: 16px 16px 0 0;
+        }
+
+        .media-slide {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .media-slide.active {
+            opacity: 1;
+        }
+
+        .media-slide img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .media-slide video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .play-button {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px;
+            height: 60px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .play-button:hover {
+            background: rgba(0, 0, 0, 0.9);
+            transform: translate(-50%, -50%) scale(1.1);
+        }
+
+        .play-button::after {
+            content: '▶';
+            color: white;
+            font-size: 24px;
+            margin-left: 4px;
+        }
+
+        .gallery-nav {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+        }
+
+        .gallery-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.5);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .gallery-dot.active {
+            background: white;
+            width: 24px;
+            border-radius: 4px;
+        }
+
+        .gallery-arrows {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 10px;
+            pointer-events: none;
+        }
+
+        .gallery-arrow {
+            width: 40px;
+            height: 40px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            pointer-events: all;
+            transition: all 0.3s ease;
+            color: white;
+            font-size: 20px;
+        }
+
+        .gallery-arrow:hover {
+            background: rgba(0, 0, 0, 0.8);
+        }
+
+        .popup-info {
+            padding: 20px;
+        }
+
+        .popup-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+
+        .popup-title {
+            flex: 1;
+        }
+
+        .popup-title h3 {
+            margin: 0 0 8px 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .author-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .author-info img {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+        }
+
+        .popup-description {
+            color: rgba(255, 255, 255, 0.9);
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .popup-tips {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .popup-tips h4 {
+            color: var(--primary);
+            font-size: 14px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .popup-tips ul {
+            list-style: none;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+        }
+
+        .popup-tips li {
+            padding-left: 20px;
+            position: relative;
+            margin-bottom: 4px;
+        }
+
+        .popup-tips li::before {
+            content: '•';
+            position: absolute;
+            left: 8px;
+            color: var(--primary);
+        }
+
+        .popup-actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .action-btn {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 12px;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .action-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .action-btn.primary {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .action-btn.primary:hover {
+            background: #0066dd;
+        }
+
+        .social-links {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .social-link {
+            width: 36px;
+            height: 36px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: white;
+            text-decoration: none;
+        }
+
+        .social-link:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.1);
+        }
+
+        /* Loading animation */
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 9999;
+        }
+
+        .loading-ring {
+            width: 60px;
+            height: 60px;
+            border: 3px solid transparent;
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .map-overlay {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .search-container {
+                min-width: auto;
+                width: 100%;
+            }
+
+            .spots-panel {
+                bottom: 20px;
+                left: 10px;
+                right: 10px;
+                transform: none;
+            }
+
+            .leaflet-popup-content-wrapper {
+                width: 340px !important;
+            }
+
+            .media-gallery {
+                height: 200px;
+            }
+
+            .data-panel {
+                top: auto;
+                bottom: 100px;
+                right: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading">
+        <div class="loading-ring"></div>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="map-overlay">
+        <div class="glass-panel search-container">
+            <input type="text" class="search-input" placeholder="Search for places..." id="searchInput">
+            <button class="filter-btn" onclick="searchPlaces()">🔍</button>
+            <button class="filter-btn" onclick="toggleAdvancedFilters()">⚙️ Filters</button>
+        </div>
+
+        <div class="glass-panel filter-buttons">
+            <button class="filter-btn active" onclick="filterSpots('all')">All</button>
+            <button class="filter-btn" onclick="filterSpots('restaurant')">🍽️ Food</button>
+            <button class="filter-btn" onclick="filterSpots('museum')">🏛️ Culture</button>
+            <button class="filter-btn" onclick="filterSpots('park')">🌳 Nature</button>
+            <button class="filter-btn" onclick="filterSpots('shopping')">🛍️ Shopping</button>
+        </div>
+    </div>
+
+    <div class="data-panel">
+        <button class="data-toggle-btn" onclick="toggleDataModal()">
+            <span>📊</span> Manage Data
+        </button>
+    </div>
+
+    <div class="advanced-filters" id="advancedFilters">
+        <h4 style="color: white; margin-bottom: 20px;">Advanced Filters</h4>
+        
+        <div class="filter-section">
+            <h4>Price Range</h4>
+            <div class="price-slider" id="priceSlider">
+                <div class="price-slider-fill"></div>
+            </div>
+            <div class="price-inputs">
+                <input type="number" class="price-input" id="minPrice" placeholder="Min €" value="0">
+                <span style="color: white;">-</span>
+                <input type="number" class="price-input" id="maxPrice" placeholder="Max €" value="200">
+            </div>
+        </div>
+
+        <div class="filter-section">
+            <h4>Rating</h4>
+            <div class="checkbox-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" value="4.5" onchange="applyAdvancedFilters()">
+                    4.5+ Stars
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" value="4.0" onchange="applyAdvancedFilters()">
+                    4.0+ Stars
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" value="3.5" onchange="applyAdvancedFilters()">
+                    3.5+ Stars
+                </label>
+            </div>
+        </div>
+
+        <div class="filter-section">
+            <h4>Features</h4>
+            <div class="checkbox-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="openNow" onchange="applyAdvancedFilters()">
+                    Open Now
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="editorPick" onchange="applyAdvancedFilters()">
+                    Editor's Picks Only
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="hasVideo" onchange="applyAdvancedFilters()">
+                    Has Video Content
+                </label>
+            </div>
+        </div>
+
+        <div class="filter-section">
+            <h4>Distance</h4>
+            <select class="price-input" id="distanceFilter" onchange="applyAdvancedFilters()" style="width: 100%;">
+                <option value="all">Any Distance</option>
+                <option value="1">Within 1 km</option>
+                <option value="2">Within 2 km</option>
+                <option value="5">Within 5 km</option>
+                <option value="10">Within 10 km</option>
+            </select>
+        </div>
+
+        <div class="filter-actions">
+            <button class="filter-btn" onclick="resetFilters()">Reset</button>
+            <button class="filter-btn active" onclick="toggleAdvancedFilters()">Apply</button>
+        </div>
+    </div>
+
+    <!-- Spots Panel -->
+    <div class="spots-panel" id="spotsPanel"></div>
+
+    <!-- Data Management Modal -->
+    <div class="modal-overlay" id="dataModal">
+        <div class="modal">
+            <h3>Data Management</h3>
+            <div class="import-tabs">
+                <button class="import-tab active" onclick="switchTab('import')">Import</button>
+                <button class="import-tab" onclick="switchTab('export')">Export</button>
+                <button class="import-tab" onclick="switchTab('sample')">Sample Data</button>
+            </div>
+
+            <div id="importStatus" class="import-status">
+                <p></p>
+            </div>
+
+            <div id="import-content" class="import-content active">
+                <div class="file-drop-zone" id="dropZone">
+                    <p>📁 Drag and drop your JSON or CSV file here</p>
+                    <p>or <span onclick="document.getElementById('fileInput').click()">browse files</span></p>
+                    <input type="file" id="fileInput" accept=".json,.csv" style="display: none;" onchange="handleFileSelect(event)">
+                </div>
+
+                <h4 style="color: white; margin-bottom: 10px;">Or paste JSON data:</h4>
+                <textarea id="jsonInput" placeholder="Paste your JSON data here..."></textarea>
+                <button class="filter-btn active" onclick="importFromJSON()">Import JSON</button>
+
+                <div class="template-info">
+                    <h5>JSON Template:</h5>
+                    <code id="jsonTemplate"></code>
+                </div>
+            </div>
+
+            <div id="export-content" class="import-content">
+                <h4 style="color: white; margin-bottom: 20px;">Export current map data</h4>
+                <div style="display: flex; gap: 10px;">
+                    <button class="filter-btn active" onclick="exportData('json')">Export as JSON</button>
+                    <button class="filter-btn active" onclick="exportData('csv')">Export as CSV</button>
+                </div>
+
+                <h4 style="color: white; margin: 30px 0 20px;">Download templates</h4>
+                <div style="display: flex; gap: 10px;">
+                    <button class="filter-btn" onclick="downloadTemplate('json')">JSON Template</button>
+                    <button class="filter-btn" onclick="downloadTemplate('csv')">CSV Template</button>
+                </div>
+            </div>
+
+            <div id="sample-content" class="import-content">
+                <h4 style="color: white; margin-bottom: 20px;">Load Sample Data</h4>
+                <p style="color: rgba(255, 255, 255, 0.8); margin-bottom: 20px;">
+                    This will load sample tourist spots in Paris. Your current data will be replaced.
+                </p>
+                <button class="filter-btn active" onclick="loadSampleData()">Load Sample Data</button>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+                <button class="filter-btn" onclick="closeDataModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Enhanced data structure for tourist spots with media content
+        let spots = [
+            {
+                id: 1,
+                name: "Eiffel Tower",
+                description: "The iron lady of Paris stands tall at 330 meters, offering breathtaking views of the city. This architectural marvel attracts millions of visitors yearly with its timeless elegance.",
+                category: "museum",
+                icon: "🗼",
+                rating: 4.8,
+                lat: 48.8584,
+                lng: 2.2945,
+                price: 26,
+                hours: { open: "09:30", close: "23:45" },
+                editorPick: true,
+                author: {
+                    name: "Sophie Martin",
+                    avatar: "https://i.pravatar.cc/100?img=1"
+                },
+                media: [
+                    { type: "image", url: "https://images.unsplash.com/photo-1511739001486-6bfe10ce785f?w=800", caption: "Eiffel Tower at sunset" },
+                    { type: "image", url: "https://images.unsplash.com/photo-1543349689-9a4d426bee8e?w=800", caption: "Night view with lights" },
+                    { type: "video", url: "https://cdn.pixabay.com/vimeo/328940142/paris-24502.mp4?width=640&hash=7f1e7d3f3c9d8b9a9f8f7d3f3c9d8b9a9f8f7d3f", thumbnail: "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=800" }
+                ],
+                tips: [
+                    "Visit early morning or late evening to avoid crowds",
+                    "Book tickets online to skip the queue",
+                    "The view from Trocadéro is perfect for photos"
+                ],
+                relatedArticle: {
+                    title: "48 Hours in Paris: A Perfect Weekend Guide",
+                    url: "#"
+                },
+                social: {
+                    instagram: "https://instagram.com/toureiffelofficielle",
+                    website: "https://www.toureiffel.paris"
+                }
+            },
+            {
+                id: 2,
+                name: "Le Jules Verne",
+                description: "Michelin-starred dining experience 125 meters above Paris. Chef Frédéric Anton creates contemporary French cuisine with a view that matches the exceptional food.",
+                category: "restaurant",
+                icon: "🍽️",
+                rating: 4.7,
+                lat: 48.8582,
+                lng: 2.2945,
+                price: 190,
+                hours: { open: "12:00", close: "21:30" },
+                author: {
+                    name: "Marcus Chen",
+                    avatar: "https://i.pravatar.cc/100?img=3"
+                },
+                media: [
+                    { type: "image", url: "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800", caption: "Signature dish presentation" },
+                    { type: "image", url: "https://images.unsplash.com/photo-1559339352-11d035aa65de?w=800", caption: "Dining room with panoramic views" }
+                ],
+                tips: [
+                    "Reservations essential - book 2-3 months ahead",
+                    "Lunch menu offers better value",
+                    "Dress code: Smart casual required"
+                ],
+                relatedArticle: {
+                    title: "Paris's Most Spectacular Dining Views",
+                    url: "#"
+                },
+                social: {
+                    instagram: "https://instagram.com/lejulesverneparis",
+                    website: "https://www.lejules-verne.com"
+                }
+            },
+            {
+                id: 3,
+                name: "Luxembourg Gardens",
+                description: "A 23-hectare oasis in the heart of Paris. These palace gardens feature beautiful flowerbeds, tree-lined promenades, and the famous Medici Fountain.",
+                category: "park",
+                icon: "🌳",
+                rating: 4.6,
+                lat: 48.8462,
+                lng: 2.3372,
+                price: 0,
+                hours: { open: "07:30", close: "20:30" },
+                editorPick: true,
+                author: {
+                    name: "Emma Wilson",
+                    avatar: "https://i.pravatar.cc/100?img=5"
+                },
+                media: [
+                    { type: "image", url: "https://images.unsplash.com/photo-1575385043265-42f10a75ff90?w=800", caption: "Medici Fountain" },
+                    { type: "image", url: "https://images.unsplash.com/photo-1593277992013-05e17a5f417d?w=800", caption: "Palace and gardens view" },
+                    { type: "image", url: "https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=800", caption: "Spring blooms" }
+                ],
+                tips: [
+                    "Free chairs available throughout the park",
+                    "Puppet shows for kids on weekends",
+                    "Best picnic spots near the pond"
+                ],
+                relatedArticle: {
+                    title: "Secret Gardens of Paris",
+                    url: "#"
+                },
+                social: {
+                    website: "https://www.senat.fr/visite/jardin/"
+                }
+            },
+            {
+                id: 4,
+                name: "Louvre Museum",
+                description: "The world's largest art museum houses over 35,000 works including the Mona Lisa, Venus de Milo, and countless treasures spanning 9,000 years of history.",
+                category: "museum",
+                icon: "🏛️",
+                rating: 4.9,
+                lat: 48.8606,
+                lng: 2.3376,
+                price: 17,
+                hours: { open: "09:00", close: "18:00" },
+                author: {
+                    name: "David Laurent",
+                    avatar: "https://i.pravatar.cc/100?img=7"
+                },
+                media: [
+                    { type: "image", url: "https://images.unsplash.com/photo-1566127444979-b3d2b654e3d7?w=800", caption: "Glass pyramid entrance" },
+                    { type: "image", url: "https://images.unsplash.com/photo-1555999017-8e320096c893?w=800", caption: "Gallery halls" },
+                    { type: "video", url: "https://cdn.pixabay.com/vimeo/846439422/louvre-175396.mp4?width=640&hash=8f2e8d4f4c0e9c0b0f9f8d4f4c0e9c0b0f9f8d4f", thumbnail: "https://images.unsplash.com/photo-1596484552834-6a58f850e0a1?w=800" }
+                ],
+                tips: [
+                    "Wednesday and Friday open until 9:45 PM",
+                    "Free admission first Sunday of each month",
+                    "Download the official app for audio guides"
+                ],
+                relatedArticle: {
+                    title: "Louvre Masterpieces: What Not to Miss",
+                    url: "#"
+                },
+                social: {
+                    instagram: "https://instagram.com/museelouvre",
+                    website: "https://www.louvre.fr"
+                }
+            },
+            {
+                id: 5,
+                name: "Champs-Élysées",
+                description: "The most famous avenue in the world stretches 1.9km from Place de la Concorde to Arc de Triomphe, lined with luxury boutiques, cafes, and theaters.",
+                category: "shopping",
+                icon: "🛍️",
+                rating: 4.5,
+                lat: 48.8698,
+                lng: 2.3078,
+                price: 0,
+                hours: { open: "10:00", close: "20:00" },
+                author: {
+                    name: "Claire Dubois",
+                    avatar: "https://i.pravatar.cc/100?img=9"
+                },
+                media: [
+                    { type: "image", url: "https://images.unsplash.com/photo-1509439507567-fb5c088bb16f?w=800", caption: "Evening lights on the avenue" },
+                    { type: "image", url: "https://images.unsplash.com/photo-1550340499-a6c60fc8287c?w=800", caption: "Arc de Triomphe view" }
+                ],
+                tips: [
+                    "Best shopping between George V and Franklin Roosevelt",
+                    "Christmas lights from November to January",
+                    "Side streets offer better dining options"
+                ],
+                relatedArticle: {
+                    title: "Shopping in Paris: From Haute Couture to Hidden Boutiques",
+                    url: "#"
+                },
+                social: {
+                    website: "https://www.paris.fr"
+                }
+            }
+        ];
+
+        let map;
+        let markers = [];
+        let currentFilter = 'all';
+        let userLocation = null;
+
+        // Advanced filter state
+        let advancedFilterState = {
+            minPrice: 0,
+            maxPrice: 200,
+            minRating: 0,
+            openNow: false,
+            editorPick: false,
+            hasVideo: false,
+            maxDistance: null
+        };
+
+        // Initialize map
+        function initMap() {
+            map = L.map('map', {
+                center: [48.8566, 2.3522],
+                zoom: 13,
+                zoomControl: false
+            });
+
+            // Dark themed map tiles
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '© OpenStreetMap contributors',
+                subdomains: 'abcd',
+                maxZoom: 19
+            }).addTo(map);
+
+            // Add zoom control to bottom right
+            L.control.zoom({
+                position: 'bottomright'
+            }).addTo(map);
+
+            // Try to get user location
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    userLocation = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    };
+                });
+            }
+
+            // Add spots to map
+            addSpotsToMap(spots);
+            
+            // Render spot cards
+            renderSpotCards(spots);
+
+            // Initialize price inputs
+            document.getElementById('minPrice').addEventListener('input', applyAdvancedFilters);
+            document.getElementById('maxPrice').addEventListener('input', applyAdvancedFilters);
+            
+            // Initialize search input
+            document.getElementById('searchInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    searchPlaces();
+                }
+            });
+
+            // Hide loading
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        // Toggle advanced filters panel
+        function toggleAdvancedFilters() {
+            const panel = document.getElementById('advancedFilters');
+            panel.classList.toggle('active');
+        }
+
+        // Apply advanced filters
+        function applyAdvancedFilters() {
+            // Update filter state
+            advancedFilterState.minPrice = parseFloat(document.getElementById('minPrice').value) || 0;
+            advancedFilterState.maxPrice = parseFloat(document.getElementById('maxPrice').value) || Infinity;
+            
+            const ratingCheckboxes = document.querySelectorAll('.checkbox-group input[type="checkbox"]:checked');
+            advancedFilterState.minRating = Math.min(...Array.from(ratingCheckboxes)
+                .filter(cb => cb.value && !isNaN(cb.value))
+                .map(cb => parseFloat(cb.value)), 0);
+            
+            advancedFilterState.openNow = document.getElementById('openNow').checked;
+            advancedFilterState.editorPick = document.getElementById('editorPick').checked;
+            advancedFilterState.hasVideo = document.getElementById('hasVideo').checked;
+            
+            const distanceValue = document.getElementById('distanceFilter').value;
+            advancedFilterState.maxDistance = distanceValue === 'all' ? null : parseFloat(distanceValue);
+
+            // Apply all filters
+            filterSpots(currentFilter);
+        }
+
+        // Reset filters
+        function resetFilters() {
+            document.getElementById('minPrice').value = 0;
+            document.getElementById('maxPrice').value = 200;
+            document.querySelectorAll('.checkbox-group input[type="checkbox"]').forEach(cb => cb.checked = false);
+            document.getElementById('distanceFilter').value = 'all';
+            
+            advancedFilterState = {
+                minPrice: 0,
+                maxPrice: 200,
+                minRating: 0,
+                openNow: false,
+                editorPick: false,
+                hasVideo: false,
+                maxDistance: null
+            };
+            
+            filterSpots('all');
+        }
+
+        // Check if spot is open now
+        function isOpenNow(spot) {
+            if (!spot.hours) return true;
+            
+            const now = new Date();
+            const currentTime = now.getHours() * 60 + now.getMinutes();
+            
+            const [openHour, openMin] = spot.hours.open.split(':').map(Number);
+            const [closeHour, closeMin] = spot.hours.close.split(':').map(Number);
+            
+            const openTime = openHour * 60 + openMin;
+            const closeTime = closeHour * 60 + closeMin;
+            
+            return currentTime >= openTime && currentTime <= closeTime;
+        }
+
+        // Calculate distance between two points
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Earth's radius in kilometers
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        // Data management functions
+        function toggleDataModal() {
+            const modal = document.getElementById('dataModal');
+            modal.classList.toggle('active');
+            
+            // Initialize drag-drop when modal opens
+            if (modal.classList.contains('active')) {
+                initDragDrop();
+                
+                // Show JSON template
+                const template = {
+                    name: "Location Name",
+                    description: "Detailed description",
+                    category: "restaurant|museum|park|shopping",
+                    icon: "🍽️",
+                    rating: 4.5,
+                    lat: 48.8566,
+                    lng: 2.3522,
+                    price: 50,
+                    hours: { open: "09:00", close: "22:00" },
+                    editorPick: false,
+                    author: {
+                        name: "Author Name",
+                        avatar: "https://example.com/avatar.jpg"
+                    },
+                    media: [
+                        {
+                            type: "image|video",
+                            url: "https://example.com/media.jpg",
+                            caption: "Media caption",
+                            thumbnail: "https://example.com/thumb.jpg"
+                        }
+                    ],
+                    tips: ["Tip 1", "Tip 2", "Tip 3"],
+                    relatedArticle: {
+                        title: "Article Title",
+                        url: "https://example.com/article"
+                    },
+                    social: {
+                        instagram: "https://instagram.com/handle",
+                        website: "https://example.com"
+                    }
+                };
+                const templateElement = document.getElementById('jsonTemplate');
+                if (templateElement) {
+                    templateElement.textContent = JSON.stringify(template, null, 2);
+                }
+            }
+        }
+
+        function closeDataModal() {
+            document.getElementById('dataModal').classList.remove('active');
+        }
+
+        function switchTab(tab) {
+            // Update tab buttons
+            document.querySelectorAll('.import-tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Update content
+            document.querySelectorAll('.import-content').forEach(c => c.classList.remove('active'));
+            document.getElementById(`${tab}-content`).classList.add('active');
+        }
+
+        // File handling
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const content = e.target.result;
+                
+                if (file.name.endsWith('.json')) {
+                    try {
+                        const data = JSON.parse(content);
+                        importData(data);
+                    } catch (error) {
+                        showImportStatus('Error parsing JSON file: ' + error.message, true);
+                    }
+                } else if (file.name.endsWith('.csv')) {
+                    parseCSV(content);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // Initialize drag and drop
+        function initDragDrop() {
+            const dropZone = document.getElementById('dropZone');
+            
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('drag-over');
+            });
+            
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('drag-over');
+            });
+            
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('drag-over');
+                
+                const file = e.dataTransfer.files[0];
+                if (file) {
+                    const input = document.getElementById('fileInput');
+                    input.files = e.dataTransfer.files;
+                    handleFileSelect({ target: input });
+                }
+            });
+        }
+
+        function importData(data) {
+            try {
+                // Validate data structure
+                const isArray = Array.isArray(data);
+                const dataArray = isArray ? data : [data];
+                
+                // Basic validation
+                dataArray.forEach((item, index) => {
+                    if (!item.name || !item.lat || !item.lng) {
+                        throw new Error(`Item ${index + 1} missing required fields (name, lat, lng)`);
+                    }
+                });
+                
+                // Generate new IDs and merge with existing data
+                let maxId = Math.max(...spots.map(s => s.id), 0);
+                const newSpots = dataArray.map(item => ({
+                    ...item,
+                    id: ++maxId,
+                    category: item.category || 'restaurant',
+                    icon: item.icon || '📍',
+                    rating: item.rating || 4.0
+                }));
+                
+                spots = [...spots, ...newSpots];
+                
+                // Update map and cards
+                addSpotsToMap(spots);
+                renderSpotCards(spots);
+                
+                showImportStatus(`Successfully imported ${newSpots.length} location(s)!`, false);
+            } catch (error) {
+                showImportStatus('Import error: ' + error.message, true);
+            }
+        }
+
+        function importFromJSON() {
+            const jsonInput = document.getElementById('jsonInput').value.trim();
+            if (!jsonInput) {
+                showImportStatus('Please paste JSON data', true);
+                return;
+            }
+            
+            try {
+                const data = JSON.parse(jsonInput);
+                importData(data);
+                document.getElementById('jsonInput').value = '';
+            } catch (error) {
+                showImportStatus('Invalid JSON: ' + error.message, true);
+            }
+        }
+
+        function parseCSV(csvText) {
+            try {
+                const lines = csvText.trim().split('\n');
+                const headers = lines[0].split(',').map(h => h.trim());
+                
+                const data = [];
+                for (let i = 1; i < lines.length; i++) {
+                    const values = lines[i].split(',');
+                    const obj = {};
+                    
+                    headers.forEach((header, index) => {
+                        const value = values[index]?.trim().replace(/^"(.*)"$/, '$1');
+                        
+                        // Parse specific fields
+                        if (header === 'lat' || header === 'lng' || header === 'rating' || header === 'price') {
+                            obj[header] = parseFloat(value) || 0;
+                        } else if (header === 'hours' && value) {
+                            const [open, close] = value.split('-');
+                            obj[header] = { open: open?.trim(), close: close?.trim() };
+                        } else if (header === 'editorPick') {
+                            obj[header] = value === 'true';
+                        } else if (header === 'tips' || header.startsWith('tip')) {
+                            if (!obj.tips) obj.tips = [];
+                            if (value) obj.tips.push(value);
+                        } else if (header === 'media1URL' && value) {
+                            obj.media = [{
+                                type: values[headers.indexOf('media1Type')] || 'image',
+                                url: value,
+                                caption: values[headers.indexOf('media1Caption')] || ''
+                            }];
+                        } else if (header === 'authorName' && value) {
+                            obj.author = {
+                                name: value,
+                                avatar: values[headers.indexOf('authorAvatar')] || 'https://i.pravatar.cc/100'
+                            };
+                        } else if (header === 'websiteURL' || header === 'instagramURL') {
+                            if (!obj.social) obj.social = {};
+                            const key = header === 'websiteURL' ? 'website' : 'instagram';
+                            if (value) obj.social[key] = value;
+                        } else if (value && !header.includes('author') && !header.includes('media') && !header.includes('URL')) {
+                            obj[header] = value;
+                        }
+                    });
+                    
+                    if (obj.name && obj.lat && obj.lng) {
+                        data.push(obj);
+                    }
+                }
+                
+                importData(data);
+            } catch (error) {
+                showImportStatus('Error parsing CSV: ' + error.message, true);
+            }
+        }
+
+        function showImportStatus(message, isError) {
+            const statusEl = document.getElementById('importStatus');
+            const messageEl = statusEl.querySelector('p');
+            
+            messageEl.textContent = message;
+            statusEl.classList.toggle('error', isError);
+            statusEl.style.display = 'block';
+            
+            setTimeout(() => {
+                statusEl.style.display = 'none';
+            }, 5000);
+        }
+
+        function loadSampleData() {
+            const sampleData = [
+                {
+                    name: "Sacré-Cœur",
+                    description: "Perched atop Montmartre hill, this stunning basilica offers panoramic views of Paris. The white-domed church is a masterpiece of Romano-Byzantine architecture.",
+                    category: "museum",
+                    icon: "⛪",
+                    rating: 4.7,
+                    lat: 48.8867,
+                    lng: 2.3431,
+                    price: 0,
+                    hours: { open: "06:00", close: "22:30" },
+                    editorPick: true,
+                    author: {
+                        name: "Sample Author",
+                        avatar: "https://i.pravatar.cc/100?img=10"
+                    },
+                    media: [
+                        { type: "image", url: "https://images.unsplash.com/photo-1590655209636-118c1b667530?w=800", caption: "Sacré-Cœur facade" }
+                    ],
+                    tips: ["Climb the dome for 360° views", "Visit at sunset for best photos"],
+                    social: { website: "http://www.sacre-coeur-montmartre.com" }
+                }
+            ];
+            
+            spots.push(...sampleData);
+            addSpotsToMap(spots);
+            renderSpotCards(spots);
+            showImportStatus('Sample data loaded successfully!', false);
+        }
+
+        function exportData(format) {
+            if (format === 'json') {
+                const dataStr = JSON.stringify(spots, null, 2);
+                downloadFile(dataStr, 'map-data.json', 'application/json');
+            } else if (format === 'csv') {
+                let csv = 'name,description,category,icon,rating,lat,lng,price,hours,editorPick,authorName,authorAvatar,media1URL,media1Type,media1Caption,tip1,tip2,tip3,websiteURL,instagramURL\n';
+                
+                spots.forEach(spot => {
+                    const row = [
+                        spot.name,
+                        `"${spot.description.replace(/"/g, '""')}"`,
+                        spot.category,
+                        spot.icon,
+                        spot.rating,
+                        spot.lat,
+                        spot.lng,
+                        spot.price || 0,
+                        spot.hours ? `${spot.hours.open}-${spot.hours.close}` : '',
+                        spot.editorPick || false,
+                        spot.author?.name || '',
+                        spot.author?.avatar || '',
+                        spot.media?.[0]?.url || '',
+                        spot.media?.[0]?.type || '',
+                        spot.media?.[0]?.caption || '',
+                        spot.tips?.[0] || '',
+                        spot.tips?.[1] || '',
+                        spot.tips?.[2] || '',
+                        spot.social?.website || '',
+                        spot.social?.instagram || ''
+                    ];
+                    csv += row.join(',') + '\n';
+                });
+                
+                downloadFile(csv, 'map-data.csv', 'text/csv');
+            }
+        }
+
+        function downloadTemplate(format) {
+            if (format === 'json') {
+                const template = [{
+                    name: "Location Name",
+                    description: "Detailed description of the location",
+                    category: "restaurant",
+                    icon: "🍽️",
+                    rating: 4.5,
+                    lat: 48.8566,
+                    lng: 2.3522,
+                    price: 50,
+                    hours: { open: "09:00", close: "22:00" },
+                    editorPick: false,
+                    author: {
+                        name: "Author Name",
+                        avatar: "https://i.pravatar.cc/100"
+                    },
+                    media: [
+                        {
+                            type: "image",
+                            url: "https://example.com/image.jpg",
+                            caption: "Image caption"
+                        }
+                    ],
+                    tips: ["Helpful tip 1", "Helpful tip 2"],
+                    relatedArticle: {
+                        title: "Related Article Title",
+                        url: "https://example.com/article"
+                    },
+                    social: {
+                        instagram: "https://instagram.com/handle",
+                        website: "https://example.com"
+                    }
+                }];
+                downloadFile(JSON.stringify(template, null, 2), 'map-template.json', 'application/json');
+            } else if (format === 'csv') {
+                const csv = 'name,description,category,icon,rating,lat,lng,price,hours,editorPick,authorName,authorAvatar,media1URL,media1Type,media1Caption,tip1,tip2,tip3,websiteURL,instagramURL\n' +
+                           'Example Restaurant,"Fine dining experience",restaurant,🍽️,4.5,48.8566,2.3522,75,12:00-22:00,false,John Doe,https://i.pravatar.cc/100,https://example.com/image.jpg,image,Restaurant interior,Book in advance,Try the tasting menu,,https://example.com,https://instagram.com/example';
+                downloadFile(csv, 'map-template.csv', 'text/csv');
+            }
+        }
+
+        function downloadFile(content, filename, type) {
+            const blob = new Blob([content], { type: type });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // Create rich media popup content
+        function createPopupContent(spot) {
+            const mediaHTML = spot.media ? `
+                <div class="media-gallery" id="gallery-${spot.id}">
+                    ${spot.media.map((media, index) => `
+                        <div class="media-slide ${index === 0 ? 'active' : ''}" data-index="${index}">
+                            ${media.type === 'image' ? 
+                                `<img src="${media.url}" alt="${media.caption || spot.name}">` :
+                                `<img src="${media.thumbnail}" alt="${spot.name}">
+                                 <div class="play-button" onclick="playVideo('${media.url}', ${spot.id}, ${index})"></div>`
+                            }
+                        </div>
+                    `).join('')}
+                    ${spot.media.length > 1 ? `
+                        <div class="gallery-nav">
+                            ${spot.media.map((_, index) => `
+                                <div class="gallery-dot ${index === 0 ? 'active' : ''}" 
+                                     onclick="changeSlide(${spot.id}, ${index})"></div>
+                            `).join('')}
+                        </div>
+                        <div class="gallery-arrows">
+                            <div class="gallery-arrow" onclick="prevSlide(${spot.id})">‹</div>
+                            <div class="gallery-arrow" onclick="nextSlide(${spot.id})">›</div>
+                        </div>
+                    ` : ''}
+                </div>
+            ` : '';
+
+            const tipsHTML = spot.tips ? `
+                <div class="popup-tips">
+                    <h4>💡 Insider Tips</h4>
+                    <ul>
+                        ${spot.tips.map(tip => `<li>${tip}</li>`).join('')}
+                    </ul>
+                </div>
+            ` : '';
+
+            const socialHTML = spot.social ? `
+                <div class="social-links">
+                    ${spot.social.instagram ? `
+                        <a href="${spot.social.instagram}" target="_blank" class="social-link">
+                            <span>📷</span>
+                        </a>
+                    ` : ''}
+                    ${spot.social.website ? `
+                        <a href="${spot.social.website}" target="_blank" class="social-link">
+                            <span>🌐</span>
+                        </a>
+                    ` : ''}
+                    <a href="#" class="social-link" onclick="shareLocation(${spot.id}); return false;">
+                        <span>📤</span>
+                    </a>
+                </div>
+            ` : '';
+
+            return `
+                <div class="popup-content">
+                    ${mediaHTML}
+                    <div class="popup-info">
+                        <div class="popup-header">
+                            <div class="popup-title">
+                                <h3>${spot.name}</h3>
+                                ${spot.author ? `
+                                    <div class="author-info">
+                                        <img src="${spot.author.avatar}" alt="${spot.author.name}">
+                                        <span>by ${spot.author.name}</span>
+                                    </div>
+                                ` : ''}
+                            </div>
+                            ${spot.editorPick ? '<span class="editor-badge">⭐ Editor\'s Pick</span>' : ''}
+                        </div>
+                        <p class="popup-description">${spot.description}</p>
+                        ${tipsHTML}
+                        <div class="popup-actions">
+                            <a href="#" class="action-btn" onclick="getDirections(${spot.lat}, ${spot.lng}); return false;">
+                                <span>🧭</span> Get Directions
+                            </a>
+                            ${spot.relatedArticle ? `
+                                <a href="${spot.relatedArticle.url}" class="action-btn primary">
+                                    <span>📖</span> Read Article
+                                </a>
+                            ` : ''}
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                            <span class="spot-category">${spot.category}</span>
+                            <span class="spot-rating">★ ${spot.rating}</span>
+                        </div>
+                        ${socialHTML}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Gallery navigation functions
+        function changeSlide(spotId, index) {
+            const gallery = document.getElementById(`gallery-${spotId}`);
+            if (!gallery) return;
+
+            const slides = gallery.querySelectorAll('.media-slide');
+            const dots = gallery.querySelectorAll('.gallery-dot');
+
+            slides.forEach(slide => slide.classList.remove('active'));
+            dots.forEach(dot => dot.classList.remove('active'));
+
+            slides[index].classList.add('active');
+            dots[index].classList.add('active');
+        }
+
+        function nextSlide(spotId) {
+            const gallery = document.getElementById(`gallery-${spotId}`);
+            if (!gallery) return;
+
+            const activeSlide = gallery.querySelector('.media-slide.active');
+            const slides = Array.from(gallery.querySelectorAll('.media-slide'));
+            const currentIndex = slides.indexOf(activeSlide);
+            const nextIndex = (currentIndex + 1) % slides.length;
+
+            changeSlide(spotId, nextIndex);
+        }
+
+        function prevSlide(spotId) {
+            const gallery = document.getElementById(`gallery-${spotId}`);
+            if (!gallery) return;
+
+            const activeSlide = gallery.querySelector('.media-slide.active');
+            const slides = Array.from(gallery.querySelectorAll('.media-slide'));
+            const currentIndex = slides.indexOf(activeSlide);
+            const prevIndex = (currentIndex - 1 + slides.length) % slides.length;
+
+            changeSlide(spotId, prevIndex);
+        }
+
+        function playVideo(videoUrl, spotId, slideIndex) {
+            const gallery = document.getElementById(`gallery-${spotId}`);
+            if (!gallery) return;
+
+            const slide = gallery.querySelector(`.media-slide[data-index="${slideIndex}"]`);
+            slide.innerHTML = `
+                <video controls autoplay style="width: 100%; height: 100%; object-fit: cover;">
+                    <source src="${videoUrl}" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+            `;
+        }
+
+        function getDirections(lat, lng) {
+            // Open in Google Maps
+            window.open(`https://www.google.com/maps/directions/?api=1&destination=${lat},${lng}`, '_blank');
+        }
+
+        function shareLocation(spotId) {
+            const spot = spots.find(s => s.id === spotId);
+            if (!spot) return;
+
+            const shareData = {
+                title: spot.name,
+                text: spot.description,
+                url: window.location.href + `#spot-${spotId}`
+            };
+
+            if (navigator.share) {
+                navigator.share(shareData);
+            } else {
+                // Fallback - copy to clipboard
+                const text = `${spot.name} - ${spot.description}\n${window.location.href}#spot-${spotId}`;
+                navigator.clipboard.writeText(text).then(() => {
+                    alert('Location link copied to clipboard!');
+                });
+            }
+        }
+
+        // Add spots to map
+        function addSpotsToMap(spotsToAdd) {
+            // Clear existing markers
+            markers.forEach(marker => map.removeLayer(marker));
+            markers = [];
+
+            spotsToAdd.forEach(spot => {
+                const isEditorPick = spot.editorPick ? 'editor-pick' : '';
+                const markerHtml = `<div class="custom-marker ${isEditorPick}">${spot.icon}</div>`;
+                
+                const customIcon = L.divIcon({
+                    html: markerHtml,
+                    className: 'custom-div-icon',
+                    iconSize: [40, 40],
+                    iconAnchor: [20, 40],
+                    popupAnchor: [0, -40]
+                });
+
+                const marker = L.marker([spot.lat, spot.lng], { icon: customIcon })
+                    .addTo(map)
+                    .bindPopup(createPopupContent(spot), {
+                        maxWidth: 420,
+                        className: 'custom-popup'
+                    });
+
+                markers.push(marker);
+            });
+        }
+
+        // Render spot cards
+        function renderSpotCards(spotsToRender) {
+            const panel = document.getElementById('spotsPanel');
+            panel.innerHTML = '';
+
+            spotsToRender.forEach(spot => {
+                const card = document.createElement('div');
+                card.className = `spot-card ${spot.editorPick ? 'editor-pick' : ''}`;
+                
+                const isOpen = spot.hours ? isOpenNow(spot) : true;
+                const priceIndicator = spot.price ? (spot.price > 100 ? '€€€€' : spot.price > 50 ? '€€€' : spot.price > 20 ? '€€' : '€') : 'Free';
+                
+                card.innerHTML = `
+                    ${spot.editorPick ? '<div class="editor-badge">⭐ Editor\'s Pick</div>' : ''}
+                    <h3>${spot.icon} ${spot.name}</h3>
+                    <p>${spot.description.substring(0, 100)}...</p>
+                    <div class="spot-meta">
+                        <span class="spot-category">${spot.category}</span>
+                        <span class="spot-rating">★ ${spot.rating}</span>
+                        ${spot.price !== undefined ? `<span class="spot-price">${priceIndicator}</span>` : ''}
+                    </div>
+                    ${spot.hours ? `
+                        <div class="spot-status">
+                            <div class="status-dot ${isOpen ? '' : 'closed'}"></div>
+                            <span>${isOpen ? 'Open now' : 'Closed'}</span>
+                        </div>
+                    ` : ''}
+                `;
+                card.onclick = () => focusOnSpot(spot);
+                panel.appendChild(card);
+            });
+        }
+
+        // Focus on specific spot
+        function focusOnSpot(spot) {
+            map.setView([spot.lat, spot.lng], 16, {
+                animate: true,
+                duration: 1
+            });
+
+            // Open popup
+            markers.forEach(marker => {
+                const latlng = marker.getLatLng();
+                if (latlng.lat === spot.lat && latlng.lng === spot.lng) {
+                    marker.openPopup();
+                }
+            });
+        }
+
+        // Filter spots with advanced filters
+        function filterSpots(category) {
+            currentFilter = category;
+            
+            // Update button states
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            if (event && event.target) {
+                event.target.classList.add('active');
+            } else {
+                // If no event, find the button by category
+                document.querySelectorAll('.filter-btn').forEach(btn => {
+                    if (btn.textContent.includes('All') && category === 'all') btn.classList.add('active');
+                    else if (btn.textContent.includes('Food') && category === 'restaurant') btn.classList.add('active');
+                    else if (btn.textContent.includes('Culture') && category === 'museum') btn.classList.add('active');
+                    else if (btn.textContent.includes('Nature') && category === 'park') btn.classList.add('active');
+                    else if (btn.textContent.includes('Shopping') && category === 'shopping') btn.classList.add('active');
+                });
+            }
+
+            // Filter spots
+            let filteredSpots = category === 'all' 
+                ? [...spots]
+                : spots.filter(spot => spot.category === category);
+
+            // Apply advanced filters
+            filteredSpots = filteredSpots.filter(spot => {
+                // Price filter
+                if (spot.price !== undefined && (spot.price < advancedFilterState.minPrice || spot.price > advancedFilterState.maxPrice)) {
+                    return false;
+                }
+                
+                // Rating filter
+                if (advancedFilterState.minRating > 0 && spot.rating < advancedFilterState.minRating) {
+                    return false;
+                }
+                
+                // Open now filter
+                if (advancedFilterState.openNow && spot.hours && !isOpenNow(spot)) {
+                    return false;
+                }
+                
+                // Editor pick filter
+                if (advancedFilterState.editorPick && !spot.editorPick) {
+                    return false;
+                }
+                
+                // Has video filter
+                if (advancedFilterState.hasVideo && (!spot.media || !spot.media.some(m => m.type === 'video'))) {
+                    return false;
+                }
+                
+                // Distance filter
+                if (advancedFilterState.maxDistance && userLocation) {
+                    const distance = calculateDistance(userLocation.lat, userLocation.lng, spot.lat, spot.lng);
+                    if (distance > advancedFilterState.maxDistance) {
+                        return false;
+                    }
+                }
+                
+                return true;
+            });
+
+            // Update map and cards
+            addSpotsToMap(filteredSpots);
+            renderSpotCards(filteredSpots);
+        }
+
+        // Search functionality
+        function searchPlaces() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            const filteredSpots = spots.filter(spot => 
+                spot.name.toLowerCase().includes(searchTerm) ||
+                spot.description.toLowerCase().includes(searchTerm) ||
+                (spot.tips && spot.tips.some(tip => tip.toLowerCase().includes(searchTerm))) ||
+                (spot.author && spot.author.name.toLowerCase().includes(searchTerm))
+            );
+
+            addSpotsToMap(filteredSpots);
+            renderSpotCards(filteredSpots);
+        }
+
+        // Initialize when page loads
+        window.addEventListener('load', function() {
+            // Multiple initialization attempts
+            let attempts = 0;
+            const maxAttempts = 5;
+            
+            function tryInitMap() {
+                attempts++;
+                
+                if (typeof L !== 'undefined') {
+                    console.log('Leaflet loaded, initializing map...');
+                    initMap();
+                } else if (attempts < maxAttempts) {
+                    console.log(`Leaflet not loaded yet, attempt ${attempts}/${maxAttempts}`);
+                    setTimeout(tryInitMap, 1000);
+                } else {
+                    // Try loading Leaflet dynamically as last resort
+                    console.error('Failed to load Leaflet, attempting dynamic load...');
+                    loadLeafletDynamically();
+                }
+            }
+            
+            // Dynamic loading fallback
+            function loadLeafletDynamically() {
+                // Load CSS
+                const link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+                document.head.appendChild(link);
+                
+                // Load JS
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+                script.onload = function() {
+                    console.log('Leaflet loaded dynamically');
+                    initMap();
+                };
+                script.onerror = function() {
+                    document.getElementById('loading').innerHTML = '<p style="color: white;">Error loading map library. Please check your internet connection and refresh the page.</p>';
+                };
+                document.head.appendChild(script);
+            }
+            
+            // Start initialization
+            tryInitMap();
+        });
+
+        // Make functions globally accessible
+        window.filterSpots = filterSpots;
+        window.toggleAdvancedFilters = toggleAdvancedFilters;
+        window.applyAdvancedFilters = applyAdvancedFilters;
+        window.resetFilters = resetFilters;
+        window.toggleDataModal = toggleDataModal;
+        window.closeDataModal = closeDataModal;
+        window.switchTab = switchTab;
+        window.handleFileSelect = handleFileSelect;
+        window.importFromJSON = importFromJSON;
+        window.loadSampleData = loadSampleData;
+        window.exportData = exportData;
+        window.downloadTemplate = downloadTemplate;
+        window.searchPlaces = searchPlaces;
+        window.changeSlide = changeSlide;
+        window.nextSlide = nextSlide;
+        window.prevSlide = prevSlide;
+        window.playVideo = playVideo;
+        window.getDirections = getDirections;
+        window.shareLocation = shareLocation;
+    </script>
+</body>
+</html>
