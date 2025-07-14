@@ -1,4 +1,4 @@
-// server.js - Backend API Server
+// server.js - Version complète avec Frontend
 const express = require('express');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcrypt');
@@ -8,6 +8,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
 const { body, validationResult } = require('express-validator');
+const path = require('path');
 
 // Load environment variables
 dotenv.config();
@@ -15,24 +16,32 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Security middleware
-app.use(helmet());
+// Security middleware - MODIFIÉ pour permettre le frontend
+app.use(helmet({
+    contentSecurityPolicy: false, // Désactivé pour simplifier
+}));
+
+// CORS modifié pour accepter toutes les origines en développement
 app.use(cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:8000',
+    origin: true,
     credentials: true
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// IMPORTANT : Servir les fichiers du frontend
+app.use(express.static(path.join(__dirname, '../frontend')));
+
 // Rate limiting
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100 // limit each IP to 100 requests per windowMs
+    windowMs: 15 * 60 * 1000,
+    max: 100
 });
 
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 5 // limit login attempts
+    max: 5
 });
 
 app.use('/api/', limiter);
@@ -107,6 +116,15 @@ async function logActivity(userId, action, entityType, entityId, details = {}, r
         console.error('Activity logging error:', error);
     }
 }
+
+// ===== HEALTH CHECK =====
+app.get('/api/health', (req, res) => {
+    res.json({ 
+        status: 'healthy',
+        message: 'Liquid Glass Map API is running!',
+        timestamp: new Date().toISOString()
+    });
+});
 
 // ===== AUTH ROUTES =====
 
@@ -205,13 +223,6 @@ app.post('/api/auth/login', [
             { expiresIn: JWT_EXPIRES_IN }
         );
 
-        // Store session
-        const tokenHash = await bcrypt.hash(token, 10);
-        await pool.execute(
-            'INSERT INTO user_sessions (user_id, token_hash, expires_at, ip_address, user_agent) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR), ?, ?)',
-            [user.id, tokenHash, req.ip, req.get('user-agent')]
-        );
-
         await logActivity(user.id, 'login', 'user', user.id, { email }, req);
 
         res.json({
@@ -226,24 +237,6 @@ app.post('/api/auth/login', [
     } catch (error) {
         console.error('Login error:', error);
         res.status(500).json({ error: 'Login failed' });
-    }
-});
-
-// Logout
-app.post('/api/auth/logout', authenticateToken, async (req, res) => {
-    try {
-        // Invalidate session
-        await pool.execute(
-            'DELETE FROM user_sessions WHERE user_id = ?',
-            [req.user.id]
-        );
-
-        await logActivity(req.user.id, 'logout', 'user', req.user.id, {}, req);
-
-        res.json({ message: 'Logged out successfully' });
-    } catch (error) {
-        console.error('Logout error:', error);
-        res.status(500).json({ error: 'Logout failed' });
     }
 });
 
@@ -271,18 +264,15 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 // Get all spots (public)
 app.get('/api/spots', async (req, res) => {
     try {
-        const { category, search, lat, lng, radius } = req.query;
+        const { category, search } = req.query;
         let query = `
             SELECT 
                 s.*,
                 c.name as category_name,
                 c.icon as category_icon,
-                c.slug as category_slug,
-                a.name as author_name,
-                a.avatar_url as author_avatar
+                c.slug as category_slug
             FROM spots s
             LEFT JOIN categories c ON s.category_id = c.id
-            LEFT JOIN authors a ON s.id = a.spot_id
             WHERE s.is_active = true
         `;
         
@@ -298,302 +288,31 @@ app.get('/api/spots', async (req, res) => {
             params.push(`%${search}%`, `%${search}%`);
         }
 
-        if (lat && lng && radius) {
-            // Haversine formula for distance calculation
-            query += ` AND (
-                6371 * acos(
-                    cos(radians(?)) * cos(radians(latitude)) *
-                    cos(radians(longitude) - radians(?)) +
-                    sin(radians(?)) * sin(radians(latitude))
-                )
-            ) <= ?`;
-            params.push(lat, lng, lat, radius);
-        }
-
         const [spots] = await pool.execute(query, params);
 
-        // Get additional data for each spot
-        for (let spot of spots) {
-            // Get media
-            const [media] = await pool.execute(
-                'SELECT * FROM media WHERE spot_id = ? ORDER BY display_order',
-                [spot.id]
-            );
-            spot.media = media;
+        // Format spots for frontend
+        const formattedSpots = spots.map(spot => ({
+            id: spot.id,
+            name: spot.name,
+            description: spot.description,
+            category: spot.category_slug || 'restaurant',
+            icon: spot.icon || spot.category_icon || '📍',
+            rating: parseFloat(spot.rating) || 0,
+            lat: parseFloat(spot.latitude),
+            lng: parseFloat(spot.longitude),
+            price: parseFloat(spot.price) || 0,
+            editorPick: !!spot.editor_pick,
+            // Add more fields as needed
+        }));
 
-            // Get tips
-            const [tips] = await pool.execute(
-                'SELECT tip_text FROM tips WHERE spot_id = ? ORDER BY display_order',
-                [spot.id]
-            );
-            spot.tips = tips.map(t => t.tip_text);
-
-            // Get opening hours
-            const [hours] = await pool.execute(
-                'SELECT * FROM opening_hours WHERE spot_id = ? ORDER BY day_of_week',
-                [spot.id]
-            );
-            spot.openingHours = hours;
-
-            // Get social links
-            const [social] = await pool.execute(
-                'SELECT platform, url FROM social_links WHERE spot_id = ?',
-                [spot.id]
-            );
-            spot.social = social.reduce((acc, s) => {
-                acc[s.platform] = s.url;
-                return acc;
-            }, {});
-
-            // Get related articles
-            const [articles] = await pool.execute(
-                'SELECT * FROM related_articles WHERE spot_id = ?',
-                [spot.id]
-            );
-            spot.relatedArticle = articles[0] || null;
-        }
-
-        res.json({ spots });
+        res.json({ spots: formattedSpots });
     } catch (error) {
         console.error('Get spots error:', error);
         res.status(500).json({ error: 'Failed to fetch spots' });
     }
 });
 
-// Get single spot (public)
-app.get('/api/spots/:id', async (req, res) => {
-    try {
-        const [spots] = await pool.execute(
-            'SELECT * FROM spots WHERE id = ? AND is_active = true',
-            [req.params.id]
-        );
-
-        if (spots.length === 0) {
-            return res.status(404).json({ error: 'Spot not found' });
-        }
-
-        const spot = spots[0];
-        // Get additional data (same as above)
-        // ... [similar code to get media, tips, etc.]
-
-        res.json({ spot });
-    } catch (error) {
-        console.error('Get spot error:', error);
-        res.status(500).json({ error: 'Failed to fetch spot' });
-    }
-});
-
-// Create new spot (admin only)
-app.post('/api/spots', authenticateToken, requireAdmin, [
-    body('name').trim().isLength({ min: 1, max: 255 }),
-    body('description').trim().optional(),
-    body('latitude').isFloat({ min: -90, max: 90 }),
-    body('longitude').isFloat({ min: -180, max: 180 }),
-    body('categoryId').isInt().optional(),
-    body('price').isFloat({ min: 0 }).optional(),
-    body('rating').isFloat({ min: 0, max: 5 }).optional()
-], validate, async (req, res) => {
-    const connection = await pool.getConnection();
-    
-    try {
-        await connection.beginTransaction();
-
-        const {
-            name, description, latitude, longitude, categoryId,
-            icon, rating, price, editorPick, hours, media,
-            tips, social, relatedArticle, author
-        } = req.body;
-
-        // Insert spot
-        const [result] = await connection.execute(
-            `INSERT INTO spots (
-                name, description, category_id, latitude, longitude,
-                icon, rating, price, editor_pick, created_by, updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                name, description, categoryId, latitude, longitude,
-                icon || '📍', rating || 0, price || 0, editorPick || false,
-                req.user.id, req.user.id
-            ]
-        );
-
-        const spotId = result.insertId;
-
-        // Insert opening hours
-        if (hours) {
-            for (const [day, times] of Object.entries(hours)) {
-                await connection.execute(
-                    'INSERT INTO opening_hours (spot_id, day_of_week, open_time, close_time) VALUES (?, ?, ?, ?)',
-                    [spotId, day, times.open, times.close]
-                );
-            }
-        }
-
-        // Insert media
-        if (media && media.length > 0) {
-            for (let i = 0; i < media.length; i++) {
-                const m = media[i];
-                await connection.execute(
-                    'INSERT INTO media (spot_id, type, url, thumbnail_url, caption, display_order) VALUES (?, ?, ?, ?, ?, ?)',
-                    [spotId, m.type, m.url, m.thumbnail || null, m.caption || null, i]
-                );
-            }
-        }
-
-        // Insert tips
-        if (tips && tips.length > 0) {
-            for (let i = 0; i < tips.length; i++) {
-                await connection.execute(
-                    'INSERT INTO tips (spot_id, tip_text, display_order, created_by) VALUES (?, ?, ?, ?)',
-                    [spotId, tips[i], i, req.user.id]
-                );
-            }
-        }
-
-        // Insert social links
-        if (social) {
-            for (const [platform, url] of Object.entries(social)) {
-                await connection.execute(
-                    'INSERT INTO social_links (spot_id, platform, url) VALUES (?, ?, ?)',
-                    [spotId, platform, url]
-                );
-            }
-        }
-
-        // Insert related article
-        if (relatedArticle) {
-            await connection.execute(
-                'INSERT INTO related_articles (spot_id, title, url) VALUES (?, ?, ?)',
-                [spotId, relatedArticle.title, relatedArticle.url]
-            );
-        }
-
-        // Insert author
-        if (author) {
-            await connection.execute(
-                'INSERT INTO authors (spot_id, name, avatar_url) VALUES (?, ?, ?)',
-                [spotId, author.name, author.avatar]
-            );
-        }
-
-        await connection.commit();
-
-        await logActivity(req.user.id, 'create', 'spot', spotId, { name }, req);
-
-        res.status(201).json({ 
-            message: 'Spot created successfully',
-            spotId 
-        });
-    } catch (error) {
-        await connection.rollback();
-        console.error('Create spot error:', error);
-        res.status(500).json({ error: 'Failed to create spot' });
-    } finally {
-        connection.release();
-    }
-});
-
-// Update spot (admin only)
-app.put('/api/spots/:id', authenticateToken, requireAdmin, async (req, res) => {
-    const connection = await pool.getConnection();
-    
-    try {
-        await connection.beginTransaction();
-
-        const spotId = req.params.id;
-        const updates = req.body;
-
-        // Update main spot data
-        if (updates.name !== undefined || updates.description !== undefined || 
-            updates.latitude !== undefined || updates.longitude !== undefined) {
-            
-            const fields = [];
-            const values = [];
-
-            if (updates.name !== undefined) {
-                fields.push('name = ?');
-                values.push(updates.name);
-            }
-            if (updates.description !== undefined) {
-                fields.push('description = ?');
-                values.push(updates.description);
-            }
-            if (updates.latitude !== undefined) {
-                fields.push('latitude = ?');
-                values.push(updates.latitude);
-            }
-            if (updates.longitude !== undefined) {
-                fields.push('longitude = ?');
-                values.push(updates.longitude);
-            }
-            if (updates.categoryId !== undefined) {
-                fields.push('category_id = ?');
-                values.push(updates.categoryId);
-            }
-            if (updates.price !== undefined) {
-                fields.push('price = ?');
-                values.push(updates.price);
-            }
-            if (updates.rating !== undefined) {
-                fields.push('rating = ?');
-                values.push(updates.rating);
-            }
-            if (updates.editorPick !== undefined) {
-                fields.push('editor_pick = ?');
-                values.push(updates.editorPick);
-            }
-
-            fields.push('updated_by = ?');
-            values.push(req.user.id);
-
-            values.push(spotId);
-
-            await connection.execute(
-                `UPDATE spots SET ${fields.join(', ')} WHERE id = ?`,
-                values
-            );
-        }
-
-        // Update other related data if provided
-        // ... [similar update logic for media, tips, hours, etc.]
-
-        await connection.commit();
-
-        await logActivity(req.user.id, 'update', 'spot', spotId, updates, req);
-
-        res.json({ message: 'Spot updated successfully' });
-    } catch (error) {
-        await connection.rollback();
-        console.error('Update spot error:', error);
-        res.status(500).json({ error: 'Failed to update spot' });
-    } finally {
-        connection.release();
-    }
-});
-
-// Delete spot (admin only)
-app.delete('/api/spots/:id', authenticateToken, requireAdmin, async (req, res) => {
-    try {
-        const spotId = req.params.id;
-
-        // Soft delete
-        await pool.execute(
-            'UPDATE spots SET is_active = false, updated_by = ? WHERE id = ?',
-            [req.user.id, spotId]
-        );
-
-        await logActivity(req.user.id, 'delete', 'spot', spotId, {}, req);
-
-        res.json({ message: 'Spot deleted successfully' });
-    } catch (error) {
-        console.error('Delete spot error:', error);
-        res.status(500).json({ error: 'Failed to delete spot' });
-    }
-});
-
-// ===== CATEGORIES ROUTES =====
-
-// Get all categories
+// Get categories
 app.get('/api/categories', async (req, res) => {
     try {
         const [categories] = await pool.execute(
@@ -606,9 +325,103 @@ app.get('/api/categories', async (req, res) => {
     }
 });
 
-// ===== USER MANAGEMENT ROUTES (admin only) =====
+// Create new spot (admin only) - Simplified for now
+app.post('/api/spots', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const {
+            name, description, latitude, longitude, categoryId,
+            icon, rating, price, editorPick
+        } = req.body;
 
-// Get all users
+        const [result] = await pool.execute(
+            `INSERT INTO spots (
+                name, description, category_id, latitude, longitude,
+                icon, rating, price, editor_pick, created_by, updated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                name, description, categoryId || 1, latitude, longitude,
+                icon || '📍', rating || 0, price || 0, editorPick || false,
+                req.user.id, req.user.id
+            ]
+        );
+
+        res.status(201).json({ 
+            message: 'Spot created successfully',
+            spotId: result.insertId 
+        });
+    } catch (error) {
+        console.error('Create spot error:', error);
+        res.status(500).json({ error: 'Failed to create spot' });
+    }
+});
+
+// Update spot (admin only)
+app.put('/api/spots/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const spotId = req.params.id;
+        const updates = req.body;
+
+        // Build update query dynamically
+        const fields = [];
+        const values = [];
+
+        if (updates.name !== undefined) {
+            fields.push('name = ?');
+            values.push(updates.name);
+        }
+        if (updates.description !== undefined) {
+            fields.push('description = ?');
+            values.push(updates.description);
+        }
+        if (updates.price !== undefined) {
+            fields.push('price = ?');
+            values.push(updates.price);
+        }
+        if (updates.rating !== undefined) {
+            fields.push('rating = ?');
+            values.push(updates.rating);
+        }
+        if (updates.editorPick !== undefined) {
+            fields.push('editor_pick = ?');
+            values.push(updates.editorPick);
+        }
+
+        if (fields.length === 0) {
+            return res.status(400).json({ error: 'No fields to update' });
+        }
+
+        fields.push('updated_by = ?');
+        values.push(req.user.id);
+        values.push(spotId);
+
+        await pool.execute(
+            `UPDATE spots SET ${fields.join(', ')} WHERE id = ?`,
+            values
+        );
+
+        res.json({ message: 'Spot updated successfully' });
+    } catch (error) {
+        console.error('Update spot error:', error);
+        res.status(500).json({ error: 'Failed to update spot' });
+    }
+});
+
+// Delete spot (admin only)
+app.delete('/api/spots/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        await pool.execute(
+            'UPDATE spots SET is_active = false WHERE id = ?',
+            [req.params.id]
+        );
+
+        res.json({ message: 'Spot deleted successfully' });
+    } catch (error) {
+        console.error('Delete spot error:', error);
+        res.status(500).json({ error: 'Failed to delete spot' });
+    }
+});
+
+// Get all users (admin only)
 app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const [users] = await pool.execute(
@@ -621,48 +434,25 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
     }
 });
 
-// Update user role
-app.put('/api/users/:id/role', authenticateToken, requireAdmin, [
-    body('role').isIn(['user', 'admin'])
-], validate, async (req, res) => {
-    try {
-        await pool.execute(
-            'UPDATE users SET role = ? WHERE id = ?',
-            [req.body.role, req.params.id]
-        );
-
-        await logActivity(req.user.id, 'update_role', 'user', req.params.id, { role: req.body.role }, req);
-
-        res.json({ message: 'User role updated successfully' });
-    } catch (error) {
-        console.error('Update role error:', error);
-        res.status(500).json({ error: 'Failed to update user role' });
-    }
-});
-
-// ===== ACTIVITY LOGS (admin only) =====
-
+// Get activity logs (admin only)
 app.get('/api/logs', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        const { limit = 50, offset = 0 } = req.query;
-
         const [logs] = await pool.execute(
-            `SELECT 
-                l.*,
-                u.email,
-                u.full_name
-            FROM activity_logs l
-            LEFT JOIN users u ON l.user_id = u.id
-            ORDER BY l.created_at DESC
-            LIMIT ? OFFSET ?`,
-            [parseInt(limit), parseInt(offset)]
+            `SELECT l.*, u.email FROM activity_logs l
+             LEFT JOIN users u ON l.user_id = u.id
+             ORDER BY l.created_at DESC LIMIT 50`
         );
-
         res.json({ logs });
     } catch (error) {
         console.error('Get logs error:', error);
         res.status(500).json({ error: 'Failed to fetch logs' });
     }
+});
+
+// IMPORTANT : Route catch-all pour le frontend
+// Doit être APRÈS toutes les routes API
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
 
 // Error handling middleware
@@ -671,8 +461,66 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'Something went wrong!' });
 });
 
-// Start server
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`API available at http://localhost:${PORT}/api`);
-});
+// Test database connection and start server
+async function startServer() {
+    try {
+        // Test database connection
+        const connection = await pool.getConnection();
+        console.log('✅ Connected to MySQL database');
+        connection.release();
+
+        // Initialize database if needed
+        try {
+            // Check if tables exist
+            const [tables] = await pool.execute(
+                "SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema = ? AND table_name = 'users'",
+                [process.env.DB_NAME || 'liquid_glass_map']
+            );
+
+            if (tables[0].count === 0) {
+                console.log('⚠️  No tables found. Please run the database schema first.');
+                console.log('Run: mysql -u root -p < backend/database-schema.sql');
+            } else {
+                // Check if admin exists
+                const [admins] = await pool.execute(
+                    "SELECT COUNT(*) as count FROM users WHERE email = 'admin@example.com'"
+                );
+
+                if (admins[0].count === 0) {
+                    console.log('📝 Creating default admin user...');
+                    const adminPassword = await bcrypt.hash('admin123', 10);
+                    await pool.execute(
+                        'INSERT INTO users (email, password_hash, full_name, role) VALUES (?, ?, ?, ?)',
+                        ['admin@example.com', adminPassword, 'Admin User', 'admin']
+                    );
+                    console.log('✅ Admin user created: admin@example.com / admin123');
+                }
+            }
+        } catch (error) {
+            console.log('⚠️  Database not fully initialized:', error.message);
+        }
+
+        // Start server
+        app.listen(PORT, () => {
+            console.log(`🚀 Server running on port ${PORT}`);
+            console.log(`📍 API available at http://localhost:${PORT}/api`);
+            console.log(`🌐 Frontend available at http://localhost:${PORT}`);
+            console.log('\n📋 Available endpoints:');
+            console.log('   GET  /api/health - Health check');
+            console.log('   POST /api/auth/login - Login');
+            console.log('   POST /api/auth/register - Register');
+            console.log('   GET  /api/spots - Get all spots');
+            console.log('   GET  /api/categories - Get categories');
+        });
+    } catch (error) {
+        console.error('❌ Failed to start server:', error);
+        console.error('\n🔧 Troubleshooting:');
+        console.error('1. Check your database credentials in .env file');
+        console.error('2. Make sure MySQL is running');
+        console.error('3. Verify the database exists');
+        process.exit(1);
+    }
+}
+
+// Start the server
+startServer();
