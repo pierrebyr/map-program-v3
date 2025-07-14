@@ -1,3 +1,6 @@
+const fs = require('fs');
+const path = require('path');
+
 // server.js - Version complète avec Frontend
 const express = require('express');
 const mysql = require('mysql2/promise');
@@ -47,16 +50,47 @@ const authLimiter = rateLimit({
 app.use('/api/', limiter);
 app.use('/api/auth/login', authLimiter);
 
-// Database connection pool
+// --- CONFIG MYSQL POUR AIVEN AVEC SSL ---
+const fs = require('fs');
+const path = require('path');
+
+// Place ton fichier ca.pem dans le même dossier que server.js, ou adapte le chemin si besoin !
 const pool = mysql.createPool({
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'liquid_glass_map',
+    host: process.env.DB_HOST,
+    port: parseInt(process.env.DB_PORT) || 21596,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
     waitForConnections: true,
     connectionLimit: 10,
-    queueLimit: 0
+    queueLimit: 0,
+    connectTimeout: 60000, // 60 secondes au lieu de 10
+    ssl: {
+        ca: fs.readFileSync(path.join(__dirname, 'ca.pem')),
+        rejectUnauthorized: true
+    }
 });
+
+// Test de connexion au démarrage
+async function testConnection() {
+    try {
+        const connection = await pool.getConnection();
+        console.log('✅ Connexion à Aiven MySQL réussie !');
+        const [rows] = await connection.execute('SELECT 1 as test');
+        console.log('✅ Test de requête réussi:', rows);
+        connection.release();
+        return true;
+    } catch (error) {
+        console.error('❌ Erreur de connexion à la base de données:');
+        console.error('Host:', process.env.DB_HOST);
+        console.error('Port:', process.env.DB_PORT);
+        console.error('User:', process.env.DB_USER);
+        console.error('Error:', error.message);
+        throw error;
+    }
+}
+testConnection();
+
 
 // JWT configuration
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
