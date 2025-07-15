@@ -1,9 +1,9 @@
-// Configuration file for easy customization
-const CONFIG = {
-    // API Settings
+// frontend/config.js
+window.APP_CONFIG = {
+    // Configuration de l'API
     api: {
-        baseUrl: 'http://localhost:3000/api', // Change this to your backend URL
-        timeout: 30000, // 30 seconds
+        baseUrl: 'https://map-program-v3.onrender.com/api', // ← METTEZ VOTRE URL RENDER ICI !
+        timeout: 30000,
         retryAttempts: 3
     },
 
