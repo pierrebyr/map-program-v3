@@ -1,9 +1,6 @@
-const fs = require('fs');
-const path = require('path');
-
-// server.js - Version complète avec Frontend
+// server.js - Version qui fonctionne avec Supabase/PostgreSQL
 const express = require('express');
-const mysql = require('mysql2/promise');
+const { Client, Pool } = require('pg'); // PostgreSQL au lieu de MySQL !
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
@@ -19,12 +16,11 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Security middleware - MODIFIÉ pour permettre le frontend
+// Security middleware
 app.use(helmet({
-    contentSecurityPolicy: false, // Désactivé pour simplifier
+    contentSecurityPolicy: false,
 }));
 
-// CORS modifié pour accepter toutes les origines en développement
 app.use(cors({
     origin: true,
     credentials: true
@@ -33,7 +29,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// IMPORTANT : Servir les fichiers du frontend
+// Servir les fichiers du frontend
 app.use(express.static(path.join(__dirname, '../frontend')));
 
 // Rate limiting
@@ -42,55 +38,25 @@ const limiter = rateLimit({
     max: 100
 });
 
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 5
-});
-
 app.use('/api/', limiter);
-app.use('/api/auth/login', authLimiter);
 
-// --- CONFIG MYSQL POUR AIVEN AVEC SSL ---
-const fs = require('fs');
-const path = require('path');
-
-// Place ton fichier ca.pem dans le même dossier que server.js, ou adapte le chemin si besoin !
-const pool = mysql.createPool({
-    host: process.env.DB_HOST,
-    port: parseInt(process.env.DB_PORT) || 21596,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
-    connectTimeout: 60000, // 60 secondes au lieu de 10
+// Configuration PostgreSQL pour Supabase
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL || process.env.SUPABASE_URL,
     ssl: {
-        ca: fs.readFileSync(path.join(__dirname, 'ca.pem')),
-        rejectUnauthorized: true
+        rejectUnauthorized: false // Important pour Supabase
     }
 });
 
-// Test de connexion au démarrage
-async function testConnection() {
-    try {
-        const connection = await pool.getConnection();
-        console.log('✅ Connexion à Aiven MySQL réussie !');
-        const [rows] = await connection.execute('SELECT 1 as test');
-        console.log('✅ Test de requête réussi:', rows);
-        connection.release();
-        return true;
-    } catch (error) {
-        console.error('❌ Erreur de connexion à la base de données:');
-        console.error('Host:', process.env.DB_HOST);
-        console.error('Port:', process.env.DB_PORT);
-        console.error('User:', process.env.DB_USER);
-        console.error('Error:', error.message);
-        throw error;
+// Test de connexion
+pool.connect((err, client, release) => {
+    if (err) {
+        console.error('❌ Erreur de connexion à la base de données:', err.stack);
+    } else {
+        console.log('✅ Connecté à Supabase/PostgreSQL !');
+        release();
     }
-}
-testConnection();
-
+});
 
 // JWT configuration
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
@@ -122,117 +88,33 @@ const requireAdmin = (req, res, next) => {
     next();
 };
 
-// Validation middleware
-const validate = (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-    }
-    next();
-};
-
-// Helper function to log activities
-async function logActivity(userId, action, entityType, entityId, details = {}, req) {
-    try {
-        await pool.execute(
-            'INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [
-                userId,
-                action,
-                entityType,
-                entityId,
-                JSON.stringify(details),
-                req.ip,
-                req.get('user-agent')
-            ]
-        );
-    } catch (error) {
-        console.error('Activity logging error:', error);
-    }
-}
-
 // ===== HEALTH CHECK =====
 app.get('/api/health', (req, res) => {
     res.json({ 
         status: 'healthy',
-        message: 'Liquid Glass Map API is running!',
+        message: 'API is running with Supabase!',
         timestamp: new Date().toISOString()
     });
 });
 
 // ===== AUTH ROUTES =====
 
-// Register new user
-app.post('/api/auth/register', [
-    body('email').isEmail().normalizeEmail(),
-    body('password').isLength({ min: 6 }),
-    body('fullName').trim().isLength({ min: 2 })
-], validate, async (req, res) => {
-    try {
-        const { email, password, fullName } = req.body;
-
-        // Check if user exists
-        const [existing] = await pool.execute(
-            'SELECT id FROM users WHERE email = ?',
-            [email]
-        );
-
-        if (existing.length > 0) {
-            return res.status(400).json({ error: 'Email already registered' });
-        }
-
-        // Hash password
-        const passwordHash = await bcrypt.hash(password, 10);
-
-        // Insert new user
-        const [result] = await pool.execute(
-            'INSERT INTO users (email, password_hash, full_name) VALUES (?, ?, ?)',
-            [email, passwordHash, fullName]
-        );
-
-        // Generate token
-        const token = jwt.sign(
-            { id: result.insertId, email, role: 'user' },
-            JWT_SECRET,
-            { expiresIn: JWT_EXPIRES_IN }
-        );
-
-        await logActivity(result.insertId, 'register', 'user', result.insertId, { email }, req);
-
-        res.json({
-            token,
-            user: {
-                id: result.insertId,
-                email,
-                fullName,
-                role: 'user'
-            }
-        });
-    } catch (error) {
-        console.error('Registration error:', error);
-        res.status(500).json({ error: 'Registration failed' });
-    }
-});
-
 // Login
-app.post('/api/auth/login', [
-    body('email').isEmail().normalizeEmail(),
-    body('password').notEmpty()
-], validate, async (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        // Get user
-        const [users] = await pool.execute(
-            'SELECT id, email, password_hash, full_name, role, is_active FROM users WHERE email = ?',
+        // Get user - PostgreSQL utilise $1, $2 au lieu de ?
+        const result = await pool.query(
+            'SELECT * FROM users WHERE email = $1',
             [email]
         );
 
-        if (users.length === 0) {
+        if (result.rows.length === 0) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        const user = users[0];
+        const user = result.rows[0];
 
         if (!user.is_active) {
             return res.status(401).json({ error: 'Account deactivated' });
@@ -245,8 +127,8 @@ app.post('/api/auth/login', [
         }
 
         // Update last login
-        await pool.execute(
-            'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?',
+        await pool.query(
+            'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1',
             [user.id]
         );
 
@@ -256,8 +138,6 @@ app.post('/api/auth/login', [
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN }
         );
-
-        await logActivity(user.id, 'login', 'user', user.id, { email }, req);
 
         res.json({
             token,
@@ -274,19 +154,67 @@ app.post('/api/auth/login', [
     }
 });
 
+// Register
+app.post('/api/auth/register', async (req, res) => {
+    try {
+        const { email, password, fullName } = req.body;
+
+        // Check if user exists
+        const existing = await pool.query(
+            'SELECT id FROM users WHERE email = $1',
+            [email]
+        );
+
+        if (existing.rows.length > 0) {
+            return res.status(400).json({ error: 'Email already registered' });
+        }
+
+        // Hash password
+        const passwordHash = await bcrypt.hash(password, 10);
+
+        // Insert new user
+        const result = await pool.query(
+            'INSERT INTO users (email, password_hash, full_name) VALUES ($1, $2, $3) RETURNING id',
+            [email, passwordHash, fullName]
+        );
+
+        const userId = result.rows[0].id;
+
+        // Generate token
+        const token = jwt.sign(
+            { id: userId, email, role: 'user' },
+            JWT_SECRET,
+            { expiresIn: JWT_EXPIRES_IN }
+        );
+
+        res.json({
+            token,
+            user: {
+                id: userId,
+                email,
+                fullName,
+                role: 'user'
+            }
+        });
+    } catch (error) {
+        console.error('Registration error:', error);
+        res.status(500).json({ error: 'Registration failed' });
+    }
+});
+
 // Get current user
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
     try {
-        const [users] = await pool.execute(
-            'SELECT id, email, full_name, role, created_at, last_login FROM users WHERE id = ?',
+        const result = await pool.query(
+            'SELECT id, email, full_name, role, created_at, last_login FROM users WHERE id = $1',
             [req.user.id]
         );
 
-        if (users.length === 0) {
+        if (result.rows.length === 0) {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        res.json({ user: users[0] });
+        res.json({ user: result.rows[0] });
     } catch (error) {
         console.error('Get user error:', error);
         res.status(500).json({ error: 'Failed to get user info' });
@@ -295,7 +223,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 
 // ===== SPOTS ROUTES =====
 
-// Get all spots (public)
+// Get all spots
 app.get('/api/spots', async (req, res) => {
     try {
         const { category, search } = req.query;
@@ -311,21 +239,24 @@ app.get('/api/spots', async (req, res) => {
         `;
         
         const params = [];
+        let paramCount = 0;
 
         if (category && category !== 'all') {
-            query += ' AND c.slug = ?';
+            paramCount++;
+            query += ` AND c.slug = $${paramCount}`;
             params.push(category);
         }
 
         if (search) {
-            query += ' AND (s.name LIKE ? OR s.description LIKE ?)';
-            params.push(`%${search}%`, `%${search}%`);
+            paramCount++;
+            query += ` AND (s.name ILIKE $${paramCount} OR s.description ILIKE $${paramCount})`;
+            params.push(`%${search}%`);
         }
 
-        const [spots] = await pool.execute(query, params);
+        const result = await pool.query(query, params);
 
         // Format spots for frontend
-        const formattedSpots = spots.map(spot => ({
+        const formattedSpots = result.rows.map(spot => ({
             id: spot.id,
             name: spot.name,
             description: spot.description,
@@ -335,8 +266,7 @@ app.get('/api/spots', async (req, res) => {
             lat: parseFloat(spot.latitude),
             lng: parseFloat(spot.longitude),
             price: parseFloat(spot.price) || 0,
-            editorPick: !!spot.editor_pick,
-            // Add more fields as needed
+            editorPick: !!spot.editor_pick
         }));
 
         res.json({ spots: formattedSpots });
@@ -349,17 +279,17 @@ app.get('/api/spots', async (req, res) => {
 // Get categories
 app.get('/api/categories', async (req, res) => {
     try {
-        const [categories] = await pool.execute(
+        const result = await pool.query(
             'SELECT * FROM categories WHERE is_active = true ORDER BY name'
         );
-        res.json({ categories });
+        res.json({ categories: result.rows });
     } catch (error) {
         console.error('Get categories error:', error);
         res.status(500).json({ error: 'Failed to fetch categories' });
     }
 });
 
-// Create new spot (admin only) - Simplified for now
+// Create spot (admin only)
 app.post('/api/spots', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const {
@@ -367,11 +297,11 @@ app.post('/api/spots', authenticateToken, requireAdmin, async (req, res) => {
             icon, rating, price, editorPick
         } = req.body;
 
-        const [result] = await pool.execute(
+        const result = await pool.query(
             `INSERT INTO spots (
                 name, description, category_id, latitude, longitude,
                 icon, rating, price, editor_pick, created_by, updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
             [
                 name, description, categoryId || 1, latitude, longitude,
                 icon || '📍', rating || 0, price || 0, editorPick || false,
@@ -381,7 +311,7 @@ app.post('/api/spots', authenticateToken, requireAdmin, async (req, res) => {
 
         res.status(201).json({ 
             message: 'Spot created successfully',
-            spotId: result.insertId 
+            spotId: result.rows[0].id 
         });
     } catch (error) {
         console.error('Create spot error:', error);
@@ -398,25 +328,26 @@ app.put('/api/spots/:id', authenticateToken, requireAdmin, async (req, res) => {
         // Build update query dynamically
         const fields = [];
         const values = [];
+        let paramCount = 1;
 
         if (updates.name !== undefined) {
-            fields.push('name = ?');
+            fields.push(`name = $${paramCount++}`);
             values.push(updates.name);
         }
         if (updates.description !== undefined) {
-            fields.push('description = ?');
+            fields.push(`description = $${paramCount++}`);
             values.push(updates.description);
         }
         if (updates.price !== undefined) {
-            fields.push('price = ?');
+            fields.push(`price = $${paramCount++}`);
             values.push(updates.price);
         }
         if (updates.rating !== undefined) {
-            fields.push('rating = ?');
+            fields.push(`rating = $${paramCount++}`);
             values.push(updates.rating);
         }
         if (updates.editorPick !== undefined) {
-            fields.push('editor_pick = ?');
+            fields.push(`editor_pick = $${paramCount++}`);
             values.push(updates.editorPick);
         }
 
@@ -424,12 +355,12 @@ app.put('/api/spots/:id', authenticateToken, requireAdmin, async (req, res) => {
             return res.status(400).json({ error: 'No fields to update' });
         }
 
-        fields.push('updated_by = ?');
+        fields.push(`updated_by = $${paramCount++}`);
         values.push(req.user.id);
         values.push(spotId);
 
-        await pool.execute(
-            `UPDATE spots SET ${fields.join(', ')} WHERE id = ?`,
+        await pool.query(
+            `UPDATE spots SET ${fields.join(', ')} WHERE id = $${paramCount}`,
             values
         );
 
@@ -443,8 +374,8 @@ app.put('/api/spots/:id', authenticateToken, requireAdmin, async (req, res) => {
 // Delete spot (admin only)
 app.delete('/api/spots/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        await pool.execute(
-            'UPDATE spots SET is_active = false WHERE id = ?',
+        await pool.query(
+            'UPDATE spots SET is_active = false WHERE id = $1',
             [req.params.id]
         );
 
@@ -455,13 +386,13 @@ app.delete('/api/spots/:id', authenticateToken, requireAdmin, async (req, res) =
     }
 });
 
-// Get all users (admin only)
+// Get users (admin only)
 app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        const [users] = await pool.execute(
+        const result = await pool.query(
             'SELECT id, email, full_name, role, is_active, created_at, last_login FROM users'
         );
-        res.json({ users });
+        res.json({ users: result.rows });
     } catch (error) {
         console.error('Get users error:', error);
         res.status(500).json({ error: 'Failed to fetch users' });
@@ -471,90 +402,34 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 // Get activity logs (admin only)
 app.get('/api/logs', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        const [logs] = await pool.execute(
-            `SELECT l.*, u.email FROM activity_logs l
+        const result = await pool.query(
+            `SELECT l.*, u.email 
+             FROM activity_logs l
              LEFT JOIN users u ON l.user_id = u.id
-             ORDER BY l.created_at DESC LIMIT 50`
+             ORDER BY l.created_at DESC 
+             LIMIT 50`
         );
-        res.json({ logs });
+        res.json({ logs: result.rows });
     } catch (error) {
         console.error('Get logs error:', error);
         res.status(500).json({ error: 'Failed to fetch logs' });
     }
 });
 
-// IMPORTANT : Route catch-all pour le frontend
-// Doit être APRÈS toutes les routes API
+// Route catch-all pour le frontend
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
 
-// Error handling middleware
+// Error handling
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({ error: 'Something went wrong!' });
 });
 
-// Test database connection and start server
-async function startServer() {
-    try {
-        // Test database connection
-        const connection = await pool.getConnection();
-        console.log('✅ Connected to MySQL database');
-        connection.release();
-
-        // Initialize database if needed
-        try {
-            // Check if tables exist
-            const [tables] = await pool.execute(
-                "SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema = ? AND table_name = 'users'",
-                [process.env.DB_NAME || 'liquid_glass_map']
-            );
-
-            if (tables[0].count === 0) {
-                console.log('⚠️  No tables found. Please run the database schema first.');
-                console.log('Run: mysql -u root -p < backend/database-schema.sql');
-            } else {
-                // Check if admin exists
-                const [admins] = await pool.execute(
-                    "SELECT COUNT(*) as count FROM users WHERE email = 'admin@example.com'"
-                );
-
-                if (admins[0].count === 0) {
-                    console.log('📝 Creating default admin user...');
-                    const adminPassword = await bcrypt.hash('admin123', 10);
-                    await pool.execute(
-                        'INSERT INTO users (email, password_hash, full_name, role) VALUES (?, ?, ?, ?)',
-                        ['admin@example.com', adminPassword, 'Admin User', 'admin']
-                    );
-                    console.log('✅ Admin user created: admin@example.com / admin123');
-                }
-            }
-        } catch (error) {
-            console.log('⚠️  Database not fully initialized:', error.message);
-        }
-
-        // Start server
-        app.listen(PORT, () => {
-            console.log(`🚀 Server running on port ${PORT}`);
-            console.log(`📍 API available at http://localhost:${PORT}/api`);
-            console.log(`🌐 Frontend available at http://localhost:${PORT}`);
-            console.log('\n📋 Available endpoints:');
-            console.log('   GET  /api/health - Health check');
-            console.log('   POST /api/auth/login - Login');
-            console.log('   POST /api/auth/register - Register');
-            console.log('   GET  /api/spots - Get all spots');
-            console.log('   GET  /api/categories - Get categories');
-        });
-    } catch (error) {
-        console.error('❌ Failed to start server:', error);
-        console.error('\n🔧 Troubleshooting:');
-        console.error('1. Check your database credentials in .env file');
-        console.error('2. Make sure MySQL is running');
-        console.error('3. Verify the database exists');
-        process.exit(1);
-    }
-}
-
-// Start the server
-startServer();
+// Start server
+app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📍 API available at http://localhost:${PORT}/api`);
+    console.log(`🌐 Frontend available at http://localhost:${PORT}`);
+});
