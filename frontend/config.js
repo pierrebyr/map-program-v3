@@ -116,4 +116,4 @@ window.APP_CONFIG = {
 };
 
 // Make config globally available
-window.APP_CONFIG = CONFIG;
+window.APP_CONFIG = APP_CONFIG;

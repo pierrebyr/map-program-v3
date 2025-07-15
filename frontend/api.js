@@ -280,28 +280,28 @@ const API = {
     
     // Convert spot data to the format expected by the frontend
     formatSpotForFrontend: function(spot) {
-        return {
-            id: spot.id,
-            name: spot.name,
-            description: spot.description,
-            category: spot.category_slug || 'restaurant',
-            icon: spot.icon || spot.category_icon || '📍',
-            rating: parseFloat(spot.rating) || 0,
-            lat: parseFloat(spot.latitude),
-            lng: parseFloat(spot.longitude),
-            price: parseFloat(spot.price) || 0,
-            editorPick: !!spot.editor_pick,
-            hours: spot.openingHours ? this.formatOpeningHours(spot.openingHours) : null,
-            media: spot.media || [],
-            tips: spot.tips || [],
-            author: spot.author_name ? {
-                name: spot.author_name,
-                avatar: spot.author_avatar
-            } : null,
-            social: spot.social || {},
-            relatedArticle: spot.relatedArticle || null
-        };
-    },
+    // Les données viennent DÉJÀ au bon format depuis l'API !
+    // On retourne juste l'objet tel quel
+    return {
+        id: spot.id,
+        name: spot.name,
+        description: spot.description,
+        category: spot.category || 'restaurant',
+        icon: spot.icon || '📍',
+        rating: spot.rating || 0,
+        lat: spot.lat,  // IMPORTANT : c'est déjà "lat", pas "latitude"
+        lng: spot.lng,  // IMPORTANT : c'est déjà "lng", pas "longitude"
+        price: spot.price || 0,
+        editorPick: spot.editorPick || false,
+        // On peut ajouter des valeurs par défaut pour les champs manquants
+        hours: spot.hours || null,
+        media: spot.media || [],
+        tips: spot.tips || [],
+        author: spot.author || null,
+        social: spot.social || {},
+        relatedArticle: spot.relatedArticle || null
+    };
+},
     
     // Format opening hours from database format
     formatOpeningHours: function(dbHours) {
