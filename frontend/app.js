@@ -38,11 +38,18 @@ async function initApp() {
     }
 }
 
+// Dans frontend/app.js, vérifiez que loadSpotsFromAPI ressemble à ça :
+
 // Load spots from API
 async function loadSpotsFromAPI() {
     try {
+        console.log('Chargement des spots depuis l\'API...');
         const data = await API.getSpots();
+        
+        // IMPORTANT : Utiliser les données de l'API, pas les données locales
         spots = data.spots.map(spot => API.formatSpotForFrontend(spot));
+        
+        console.log(`${spots.length} spots chargés depuis l'API`);
         
         // Add spots to map
         addSpotsToMap(spots);
@@ -55,14 +62,19 @@ async function loadSpotsFromAPI() {
     } catch (error) {
         console.error('Failed to load spots:', error);
         
-        // Fall back to local data if API fails
+        // NE PAS utiliser les données locales en production !
+        // Commenter ou supprimer ce bloc :
+        /*
         if (typeof initialSpots !== 'undefined') {
             spots = [...initialSpots];
             addSpotsToMap(spots);
             renderSpotCards(spots);
         }
+        */
         
-        document.getElementById('loading').style.display = 'none';
+        // Afficher une erreur à la place
+        document.getElementById('loading').innerHTML = 
+            '<p style="color: white;">Erreur de chargement. Veuillez rafraîchir la page.</p>';
     }
 }
 
