@@ -2,8 +2,8 @@
 
 const API = {
     // Base URL from config or default
-    BASE_URL: window.APP_CONFIG?.api?.baseUrl || 'http://localhost:3000/api',
-    
+    BASE_URL: window.APP_CONFIG?.api?.baseUrl || 'https://map-program-v3.onrender.com/api',
+    //                                              ↑ Assurez-vous que c'est votre URL Render
     // Request timeout
     TIMEOUT: window.APP_CONFIG?.api?.timeout || 30000,
     

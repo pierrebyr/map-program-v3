@@ -1,11 +1,3 @@
-window.APP_CONFIG = {
-    api: {
-        baseUrl: 'https://map-program-v3.onrender.com/api',
-        //         ↑ Mettez votre URL Render ici
-        timeout: 30000,
-        retryAttempts: 3
-    },
-}
 // Configuration file for easy customization
 const CONFIG = {
     // API Settings
