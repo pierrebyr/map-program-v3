@@ -40,26 +40,36 @@ const limiter = rateLimit({
 
 app.use('/api/', limiter);
 
-// Configuration PostgreSQL pour Supabase
+// Remplacez votre configuration de pool par celle-ci dans server.js
+
+// Configuration optimisée pour Supabase Session Pooler
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || process.env.SUPABASE_URL,
+    connectionString: process.env.DATABASE_URL,
     ssl: {
-        rejectUnauthorized: false // Important pour Supabase
-    }
+        rejectUnauthorized: false
+    },
+    // Configuration importante pour éviter les déconnexions
+    connectionTimeoutMillis: 60000, // 60 secondes
+    idleTimeoutMillis: 10000, // 10 secondes
+    max: 10, // Maximum 10 connexions
+    allowExitOnIdle: true, // Permet au process de se terminer proprement
+    // Options spécifiques pour le pooler Supabase
+    statement_timeout: 60000,
+    query_timeout: 60000,
 });
 
-// Test de connexion
-pool.connect((err, client, release) => {
-    if (err) {
-        console.error('❌ Erreur de connexion à la base de données:', err.stack);
-    } else {
-        console.log('✅ Connecté à Supabase/PostgreSQL !');
-        release();
-    }
+// Gestionnaire d'erreurs IMPORTANT
+pool.on('error', (err, client) => {
+    console.error('Erreur pool (ignorée):', err.code || err.message);
 });
+
+// NE PAS faire de test de connexion au démarrage
+// car le pooler Supabase n'aime pas les connexions persistantes
+
+console.log('✅ Pool PostgreSQL configuré pour Supabase');
 
 // JWT configuration
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
+const JWT_SECRET = process.env.JWT_SECRET || 'changez-moi-par-une-longue-phrase-secrete';
 const JWT_EXPIRES_IN = '24h';
 
 // Middleware to verify JWT token
