@@ -1682,3 +1682,84 @@ textarea {
         right: 10px;
     }
 }
+/* Ajoutez ces styles à votre fichier styles.css */
+
+/* Marqueur favori sur la carte */
+.custom-marker.favorite {
+    border-color: #FF1744;
+    background: rgba(255, 23, 68, 0.1);
+}
+
+.custom-marker .favorite-star {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    font-size: 16px;
+    background: white;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* Carte de spot favori */
+.spot-card.favorite {
+    border-color: rgba(255, 23, 68, 0.5);
+    background: rgba(255, 23, 68, 0.05);
+}
+
+.favorite-indicator {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    font-size: 20px;
+    z-index: 2;
+}
+
+/* Bouton favori dans les actions */
+.action-btn.favorite {
+    background: rgba(255, 23, 68, 0.2);
+    border-color: rgba(255, 23, 68, 0.3);
+}
+
+.action-btn.favorite:hover {
+    background: rgba(255, 23, 68, 0.3);
+}
+
+/* Animation du coeur */
+@keyframes heartBeat {
+    0% { transform: scale(1); }
+    25% { transform: scale(1.2); }
+    50% { transform: scale(1); }
+    75% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+.action-btn:active span {
+    animation: heartBeat 0.5s ease;
+}
+
+/* Filtre favoris actif */
+.filter-btn.favorites-active {
+    background: rgba(255, 23, 68, 0.2);
+    border-color: rgba(255, 23, 68, 0.5);
+}
+
+/* Message vide favoris */
+.empty-favorites {
+    text-align: center;
+    padding: 40px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.empty-favorites h3 {
+    color: white;
+    margin-bottom: 10px;
+}
+
+.empty-favorites p {
+    margin-bottom: 20px;
+}

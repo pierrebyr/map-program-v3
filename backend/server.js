@@ -645,3 +645,170 @@ app.post('/api/spots', authenticateToken, requireAdmin, async (req, res) => {
         client.release();
     }
 });
+// Ajoutez ces endpoints dans votre server.js
+
+// ===== FAVORITES ROUTES =====
+
+// Get user's favorites
+app.get('/api/favorites', authenticateToken, async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT 
+                s.*,
+                c.name as category_name,
+                c.icon as category_icon,
+                c.slug as category_slug,
+                f.created_at as favorited_at
+            FROM favorites f
+            JOIN spots s ON f.spot_id = s.id
+            LEFT JOIN categories c ON s.category_id = c.id
+            WHERE f.user_id = $1 AND s.is_active = true
+            ORDER BY f.created_at DESC`,
+            [req.user.id]
+        );
+
+        const formattedSpots = result.rows.map(spot => ({
+            id: spot.id,
+            name: spot.name,
+            description: spot.description,
+            category: spot.category_slug || 'restaurant',
+            icon: spot.icon || spot.category_icon || '📍',
+            rating: parseFloat(spot.rating) || 0,
+            lat: parseFloat(spot.latitude),
+            lng: parseFloat(spot.longitude),
+            price: parseFloat(spot.price) || 0,
+            editorPick: !!spot.editor_pick,
+            isFavorite: true,
+            favoritedAt: spot.favorited_at
+        }));
+
+        res.json({ spots: formattedSpots });
+    } catch (error) {
+        console.error('Get favorites error:', error);
+        res.status(500).json({ error: 'Failed to fetch favorites' });
+    }
+});
+
+// Add to favorites
+app.post('/api/favorites/:spotId', authenticateToken, async (req, res) => {
+    try {
+        const spotId = req.params.spotId;
+        
+        // Vérifier que le spot existe
+        const spotCheck = await pool.query(
+            'SELECT id FROM spots WHERE id = $1 AND is_active = true',
+            [spotId]
+        );
+        
+        if (spotCheck.rows.length === 0) {
+            return res.status(404).json({ error: 'Spot not found' });
+        }
+        
+        // Ajouter aux favoris
+        await pool.query(
+            'INSERT INTO favorites (user_id, spot_id) VALUES ($1, $2) ON CONFLICT (user_id, spot_id) DO NOTHING',
+            [req.user.id, spotId]
+        );
+        
+        // Log activity
+        await pool.query(
+            'INSERT INTO activity_logs (user_id, action, entity_type, entity_id) VALUES ($1, $2, $3, $4)',
+            [req.user.id, 'favorite_add', 'spot', spotId]
+        );
+        
+        res.json({ message: 'Added to favorites' });
+    } catch (error) {
+        console.error('Add favorite error:', error);
+        res.status(500).json({ error: 'Failed to add favorite' });
+    }
+});
+
+// Remove from favorites
+app.delete('/api/favorites/:spotId', authenticateToken, async (req, res) => {
+    try {
+        const spotId = req.params.spotId;
+        
+        const result = await pool.query(
+            'DELETE FROM favorites WHERE user_id = $1 AND spot_id = $2 RETURNING id',
+            [req.user.id, spotId]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Favorite not found' });
+        }
+        
+        // Log activity
+        await pool.query(
+            'INSERT INTO activity_logs (user_id, action, entity_type, entity_id) VALUES ($1, $2, $3, $4)',
+            [req.user.id, 'favorite_remove', 'spot', spotId]
+        );
+        
+        res.json({ message: 'Removed from favorites' });
+    } catch (error) {
+        console.error('Remove favorite error:', error);
+        res.status(500).json({ error: 'Failed to remove favorite' });
+    }
+});
+
+// Modifier la route GET /api/spots pour inclure l'état favori
+app.get('/api/spots', async (req, res) => {
+    try {
+        const { category, search, favoritesOnly } = req.query;
+        const userId = req.user?.id; // Si l'utilisateur est connecté
+        
+        let query = `
+            SELECT 
+                s.*,
+                c.name as category_name,
+                c.icon as category_icon,
+                c.slug as category_slug,
+                ${userId ? 'CASE WHEN f.id IS NOT NULL THEN true ELSE false END as is_favorite' : 'false as is_favorite'}
+            FROM spots s
+            LEFT JOIN categories c ON s.category_id = c.id
+            ${userId ? 'LEFT JOIN favorites f ON s.id = f.spot_id AND f.user_id = $1' : ''}
+            WHERE s.is_active = true
+        `;
+        
+        const params = userId ? [userId] : [];
+        let paramCount = userId ? 1 : 0;
+
+        // Filtre pour les favoris uniquement
+        if (favoritesOnly === 'true' && userId) {
+            query += ` AND f.id IS NOT NULL`;
+        }
+
+        if (category && category !== 'all') {
+            paramCount++;
+            query += ` AND c.slug = $${paramCount}`;
+            params.push(category);
+        }
+
+        if (search) {
+            paramCount++;
+            query += ` AND (s.name ILIKE $${paramCount} OR s.description ILIKE $${paramCount})`;
+            params.push(`%${search}%`);
+        }
+
+        const result = await pool.query(query, params);
+
+        // Format spots
+        const formattedSpots = result.rows.map(spot => ({
+            id: spot.id,
+            name: spot.name,
+            description: spot.description,
+            category: spot.category_slug || 'restaurant',
+            icon: spot.icon || spot.category_icon || '📍',
+            rating: parseFloat(spot.rating) || 0,
+            lat: parseFloat(spot.latitude),
+            lng: parseFloat(spot.longitude),
+            price: parseFloat(spot.price) || 0,
+            editorPick: !!spot.editor_pick,
+            isFavorite: !!spot.is_favorite
+        }));
+
+        res.json({ spots: formattedSpots });
+    } catch (error) {
+        console.error('Get spots error:', error);
+        res.status(500).json({ error: 'Failed to fetch spots' });
+    }
+});

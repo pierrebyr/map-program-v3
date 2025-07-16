@@ -30,6 +30,8 @@ async function initApp() {
         
         // Initialize event listeners
         initEventListeners();
+        // Dans initApp(), après initEventListeners()
+        addFavoritesFilter();
         
     } catch (error) {
         console.error('Failed to initialize app:', error);
@@ -203,6 +205,8 @@ function toggleDataModal() {
 }
 
 // Update data modal content for database system
+// Remplacez la fonction updateDataModalContent dans app.js par celle-ci :
+
 function updateDataModalContent() {
     const modal = document.getElementById('dataModal');
     modal.innerHTML = `
@@ -232,14 +236,26 @@ function updateDataModalContent() {
                         <textarea name="description" rows="3" class="form-input"></textarea>
                     </div>
                     
+                    <!-- Nouveau : Recherche par adresse -->
+                    <div class="form-group">
+                        <label>Address Search</label>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" id="addressSearch" placeholder="Enter address..." class="form-input" style="flex: 1;">
+                            <button type="button" onclick="searchAddress()" class="filter-btn active">Search</button>
+                        </div>
+                        <small style="color: rgba(255,255,255,0.6); display: block; margin-top: 5px;">
+                            Enter an address and click Search to auto-fill coordinates
+                        </small>
+                    </div>
+                    
                     <div class="form-row">
                         <div class="form-group">
                             <label>Latitude *</label>
-                            <input type="number" name="lat" required step="any" class="form-input">
+                            <input type="number" name="lat" required step="any" class="form-input" id="latInput">
                         </div>
                         <div class="form-group">
                             <label>Longitude *</label>
-                            <input type="number" name="lng" required step="any" class="form-input">
+                            <input type="number" name="lng" required step="any" class="form-input" id="lngInput">
                         </div>
                     </div>
                     
@@ -267,6 +283,47 @@ function updateDataModalContent() {
                         <div class="form-group">
                             <label>Rating</label>
                             <input type="number" name="rating" min="0" max="5" step="0.1" class="form-input">
+                        </div>
+                    </div>
+                    
+                    <!-- Nouveau : Section médias -->
+                    <div class="form-group">
+                        <label>Media (Photos/Videos)</label>
+                        <div id="mediaInputs">
+                            <div class="media-input-group" style="margin-bottom: 10px;">
+                                <input type="url" name="mediaUrl[]" placeholder="Image/Video URL" class="form-input" style="margin-bottom: 5px;">
+                                <input type="text" name="mediaCaption[]" placeholder="Caption (optional)" class="form-input" style="margin-bottom: 5px;">
+                                <select name="mediaType[]" class="form-input">
+                                    <option value="image">Image</option>
+                                    <option value="video">Video</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="button" onclick="addMediaInput()" class="filter-btn" style="margin-top: 10px;">+ Add Another Media</button>
+                    </div>
+                    
+                    <!-- Nouveau : Tips -->
+                    <div class="form-group">
+                        <label>Tips</label>
+                        <div id="tipsInputs">
+                            <input type="text" name="tips[]" placeholder="Add a helpful tip" class="form-input" style="margin-bottom: 5px;">
+                        </div>
+                        <button type="button" onclick="addTipInput()" class="filter-btn" style="margin-top: 10px;">+ Add Another Tip</button>
+                    </div>
+                    
+                    <!-- Nouveau : Social Links -->
+                    <div class="form-group">
+                        <label>Social Links</label>
+                        <input type="url" name="instagram" placeholder="Instagram URL (optional)" class="form-input" style="margin-bottom: 5px;">
+                        <input type="url" name="website" placeholder="Website URL (optional)" class="form-input">
+                    </div>
+                    
+                    <!-- Nouveau : Opening Hours -->
+                    <div class="form-group">
+                        <label>Opening Hours</label>
+                        <div class="form-row">
+                            <input type="time" name="openTime" placeholder="Open" class="form-input">
+                            <input type="time" name="closeTime" placeholder="Close" class="form-input">
                         </div>
                     </div>
                     
@@ -308,6 +365,162 @@ function updateDataModalContent() {
             </div>
         </div>
     `;
+}
+
+// Fonction pour rechercher une adresse
+async function searchAddress() {
+    const addressInput = document.getElementById('addressSearch');
+    const address = addressInput.value.trim();
+    
+    if (!address) {
+        alert('Please enter an address');
+        return;
+    }
+    
+    // Afficher un état de chargement
+    addressInput.disabled = true;
+    const originalText = event.target.textContent;
+    event.target.textContent = 'Searching...';
+    event.target.disabled = true;
+    
+    try {
+        const result = await API.geocodeAddress(address);
+        
+        // Remplir les champs de coordonnées
+        document.getElementById('latInput').value = result.lat;
+        document.getElementById('lngInput').value = result.lng;
+        
+        // Afficher l'adresse trouvée
+        showImportStatus(`Found: ${result.display_name}`, false);
+        
+        // Optionnel : centrer la carte sur cette position
+        if (window.map) {
+            map.setView([result.lat, result.lng], 16);
+            
+            // Ajouter un marqueur temporaire
+            const tempMarker = L.marker([result.lat, result.lng])
+                .addTo(map)
+                .bindPopup('New spot location')
+                .openPopup();
+            
+            // Supprimer le marqueur après 5 secondes
+            setTimeout(() => map.removeLayer(tempMarker), 5000);
+        }
+    } catch (error) {
+        showImportStatus('Address not found. Please try a different address or enter coordinates manually.', true);
+    } finally {
+        addressInput.disabled = false;
+        event.target.textContent = originalText;
+        event.target.disabled = false;
+    }
+}
+
+// Fonction pour ajouter un champ média
+function addMediaInput() {
+    const container = document.getElementById('mediaInputs');
+    const div = document.createElement('div');
+    div.className = 'media-input-group';
+    div.style.marginBottom = '10px';
+    div.innerHTML = `
+        <input type="url" name="mediaUrl[]" placeholder="Image/Video URL" class="form-input" style="margin-bottom: 5px;">
+        <input type="text" name="mediaCaption[]" placeholder="Caption (optional)" class="form-input" style="margin-bottom: 5px;">
+        <select name="mediaType[]" class="form-input">
+            <option value="image">Image</option>
+            <option value="video">Video</option>
+        </select>
+        <button type="button" onclick="this.parentElement.remove()" class="filter-btn" style="margin-left: 10px;">Remove</button>
+    `;
+    container.appendChild(div);
+}
+
+// Fonction pour ajouter un champ tip
+function addTipInput() {
+    const container = document.getElementById('tipsInputs');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'tips[]';
+    input.placeholder = 'Add a helpful tip';
+    input.className = 'form-input';
+    input.style.marginBottom = '5px';
+    container.appendChild(input);
+}
+
+// Mise à jour de la fonction handleAddSpot pour gérer les nouveaux champs
+async function handleAddSpot(event) {
+    event.preventDefault();
+    
+    const form = event.target;
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Adding...';
+    
+    // Collecter les médias
+    const mediaUrls = form.querySelectorAll('input[name="mediaUrl[]"]');
+    const mediaCaptions = form.querySelectorAll('input[name="mediaCaption[]"]');
+    const mediaTypes = form.querySelectorAll('select[name="mediaType[]"]');
+    const media = [];
+    
+    for (let i = 0; i < mediaUrls.length; i++) {
+        if (mediaUrls[i].value) {
+            media.push({
+                url: mediaUrls[i].value,
+                caption: mediaCaptions[i].value,
+                type: mediaTypes[i].value
+            });
+        }
+    }
+    
+    // Collecter les tips
+    const tipInputs = form.querySelectorAll('input[name="tips[]"]');
+    const tips = Array.from(tipInputs)
+        .map(input => input.value.trim())
+        .filter(tip => tip.length > 0);
+    
+    // Construire l'objet spot
+    const spotData = {
+        name: form.name.value,
+        description: form.description.value,
+        latitude: parseFloat(form.lat.value),
+        longitude: parseFloat(form.lng.value),
+        categoryId: API.getCategoryId(form.category.value),
+        price: parseFloat(form.price.value) || 0,
+        icon: form.icon.value || '📍',
+        rating: parseFloat(form.rating.value) || 0,
+        editorPick: form.editorPick.checked,
+        media: media,
+        tips: tips,
+        social: {
+            instagram: form.instagram.value || null,
+            website: form.website.value || null
+        },
+        hours: form.openTime.value && form.closeTime.value ? {
+            open: form.openTime.value,
+            close: form.closeTime.value
+        } : null,
+        author: {
+            name: Auth.currentUser.fullName || Auth.currentUser.email,
+            avatar: `https://i.pravatar.cc/100?u=${Auth.currentUser.email}`
+        }
+    };
+    
+    try {
+        await API.createSpot(spotData);
+        showImportStatus('Spot added successfully!', false);
+        form.reset();
+        
+        // Reload spots
+        await loadSpotsFromAPI();
+        
+        // Fermer le modal après 2 secondes
+        setTimeout(() => {
+            closeDataModal();
+        }, 2000);
+    } catch (error) {
+        showImportStatus('Failed to add spot: ' + error.message, true);
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Add Spot';
+    }
 }
 
 // Handle adding new spot
