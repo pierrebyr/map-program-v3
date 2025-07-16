@@ -444,3 +444,204 @@ app.listen(PORT, () => {
     console.log(`📍 API available at http://localhost:${PORT}/api`);
     console.log(`🌐 Frontend available at http://localhost:${PORT}`);
 });
+
+// Ajoutez ces fonctions dans votre server.js après les routes existantes
+
+// Modifier la route GET /api/spots pour inclure les médias
+app.get('/api/spots', async (req, res) => {
+    try {
+        const { category, search } = req.query;
+        let query = `
+            SELECT 
+                s.*,
+                c.name as category_name,
+                c.icon as category_icon,
+                c.slug as category_slug,
+                COALESCE(
+                    json_agg(
+                        DISTINCT jsonb_build_object(
+                            'type', m.type,
+                            'url', m.url,
+                            'caption', m.caption,
+                            'thumbnail', m.thumbnail_url
+                        )
+                    ) FILTER (WHERE m.id IS NOT NULL), 
+                    '[]'
+                ) as media,
+                COALESCE(
+                    json_agg(
+                        DISTINCT t.tip_text
+                    ) FILTER (WHERE t.id IS NOT NULL), 
+                    '[]'
+                ) as tips,
+                COALESCE(
+                    json_build_object(
+                        'instagram', MAX(CASE WHEN sl.platform = 'instagram' THEN sl.url END),
+                        'website', MAX(CASE WHEN sl.platform = 'website' THEN sl.url END)
+                    ),
+                    '{}'
+                ) as social,
+                COALESCE(
+                    json_build_object(
+                        'open', MIN(CASE WHEN oh.day_of_week = EXTRACT(DOW FROM CURRENT_DATE) THEN oh.open_time END)::text,
+                        'close', MIN(CASE WHEN oh.day_of_week = EXTRACT(DOW FROM CURRENT_DATE) THEN oh.close_time END)::text
+                    ),
+                    NULL
+                ) as hours,
+                json_build_object(
+                    'name', a.name,
+                    'avatar', a.avatar_url
+                ) as author
+            FROM spots s
+            LEFT JOIN categories c ON s.category_id = c.id
+            LEFT JOIN media m ON s.id = m.spot_id
+            LEFT JOIN tips t ON s.id = t.spot_id
+            LEFT JOIN social_links sl ON s.id = sl.spot_id
+            LEFT JOIN opening_hours oh ON s.id = oh.spot_id
+            LEFT JOIN authors a ON s.id = a.spot_id
+            WHERE s.is_active = true
+        `;
+        
+        const params = [];
+        let paramCount = 0;
+
+        if (category && category !== 'all') {
+            paramCount++;
+            query += ` AND c.slug = $${paramCount}`;
+            params.push(category);
+        }
+
+        if (search) {
+            paramCount++;
+            query += ` AND (s.name ILIKE $${paramCount} OR s.description ILIKE $${paramCount})`;
+            params.push(`%${search}%`);
+        }
+
+        query += ` GROUP BY s.id, c.name, c.icon, c.slug, a.name, a.avatar_url`;
+
+        const result = await pool.query(query, params);
+
+        // Format spots for frontend
+        const formattedSpots = result.rows.map(spot => ({
+            id: spot.id,
+            name: spot.name,
+            description: spot.description,
+            category: spot.category_slug || 'restaurant',
+            icon: spot.icon || spot.category_icon || '📍',
+            rating: parseFloat(spot.rating) || 0,
+            lat: parseFloat(spot.latitude),
+            lng: parseFloat(spot.longitude),
+            price: parseFloat(spot.price) || 0,
+            editorPick: !!spot.editor_pick,
+            media: spot.media || [],
+            tips: spot.tips || [],
+            social: spot.social || {},
+            hours: spot.hours,
+            author: spot.author && spot.author.name ? spot.author : null
+        }));
+
+        res.json({ spots: formattedSpots });
+    } catch (error) {
+        console.error('Get spots error:', error);
+        res.status(500).json({ error: 'Failed to fetch spots' });
+    }
+});
+
+// Modifier la route POST /api/spots pour inclure les médias
+app.post('/api/spots', authenticateToken, requireAdmin, async (req, res) => {
+    const client = await pool.connect();
+    
+    try {
+        await client.query('BEGIN');
+        
+        const {
+            name, description, latitude, longitude, categoryId,
+            icon, rating, price, editorPick,
+            media, tips, social, hours, author
+        } = req.body;
+
+        // Insérer le spot
+        const spotResult = await client.query(
+            `INSERT INTO spots (
+                name, description, category_id, latitude, longitude,
+                icon, rating, price, editor_pick, created_by, updated_by
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+            [
+                name, description, categoryId || 1, latitude, longitude,
+                icon || '📍', rating || 0, price || 0, editorPick || false,
+                req.user.id, req.user.id
+            ]
+        );
+
+        const spotId = spotResult.rows[0].id;
+
+        // Insérer les médias
+        if (media && media.length > 0) {
+            for (let i = 0; i < media.length; i++) {
+                const m = media[i];
+                await client.query(
+                    'INSERT INTO media (spot_id, type, url, caption, thumbnail_url, display_order) VALUES ($1, $2, $3, $4, $5, $6)',
+                    [spotId, m.type, m.url, m.caption, m.thumbnail, i]
+                );
+            }
+        }
+
+        // Insérer les tips
+        if (tips && tips.length > 0) {
+            for (let i = 0; i < tips.length; i++) {
+                await client.query(
+                    'INSERT INTO tips (spot_id, tip_text, display_order, created_by) VALUES ($1, $2, $3, $4)',
+                    [spotId, tips[i], i, req.user.id]
+                );
+            }
+        }
+
+        // Insérer les liens sociaux
+        if (social) {
+            if (social.instagram) {
+                await client.query(
+                    'INSERT INTO social_links (spot_id, platform, url) VALUES ($1, $2, $3)',
+                    [spotId, 'instagram', social.instagram]
+                );
+            }
+            if (social.website) {
+                await client.query(
+                    'INSERT INTO social_links (spot_id, platform, url) VALUES ($1, $2, $3)',
+                    [spotId, 'website', social.website]
+                );
+            }
+        }
+
+        // Insérer les heures d'ouverture
+        if (hours && hours.open && hours.close) {
+            // Pour simplifier, on met les mêmes heures pour tous les jours
+            for (let day = 0; day <= 6; day++) {
+                await client.query(
+                    'INSERT INTO opening_hours (spot_id, day_of_week, open_time, close_time) VALUES ($1, $2, $3, $4)',
+                    [spotId, day, hours.open, hours.close]
+                );
+            }
+        }
+
+        // Insérer l'auteur
+        if (author && author.name) {
+            await client.query(
+                'INSERT INTO authors (spot_id, name, avatar_url) VALUES ($1, $2, $3)',
+                [spotId, author.name, author.avatar || `https://i.pravatar.cc/100?u=${author.name}`]
+            );
+        }
+
+        await client.query('COMMIT');
+
+        res.status(201).json({ 
+            message: 'Spot created successfully',
+            spotId: spotId 
+        });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Create spot error:', error);
+        res.status(500).json({ error: 'Failed to create spot' });
+    } finally {
+        client.release();
+    }
+});
