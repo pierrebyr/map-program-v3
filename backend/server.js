@@ -9,6 +9,163 @@ const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
 const { body, validationResult } = require('express-validator');
 const path = require('path');
+const multer = require('multer');
+const { createClient } = require('@supabase/supabase-js');
+
+// Initialiser Supabase
+const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY
+);
+
+// Configuration multer pour upload temporaire
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB max
+    },
+    fileFilter: (req, file, cb) => {
+        // Vérifier le type MIME
+        const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        if (allowedMimes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Type de fichier non autorisé. Utilisez JPEG, PNG, WebP ou GIF.'));
+        }
+    }
+});
+
+// ===== UPLOAD ROUTES =====
+
+// Upload d'image
+app.post('/api/upload/image', authenticateToken, upload.single('image'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'Aucun fichier fourni' });
+        }
+
+        // Générer un nom de fichier unique
+        const fileExt = req.file.originalname.split('.').pop();
+        const fileName = `${req.user.id}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+        // Upload vers Supabase Storage
+        const { data: uploadData, error: uploadError } = await supabase
+            .storage
+            .from('spot-images')
+            .upload(fileName, req.file.buffer, {
+                contentType: req.file.mimetype,
+                cacheControl: '3600',
+                upsert: false
+            });
+
+        if (uploadError) {
+            console.error('Erreur upload Supabase:', uploadError);
+            return res.status(500).json({ error: 'Échec de l\'upload' });
+        }
+
+        // Obtenir l'URL publique
+        const { data: { publicUrl } } = supabase
+            .storage
+            .from('spot-images')
+            .getPublicUrl(fileName);
+
+        // Sauvegarder en base de données
+        const result = await pool.query(
+            `INSERT INTO uploaded_files 
+            (filename, original_name, mimetype, size, url, uploaded_by) 
+            VALUES ($1, $2, $3, $4, $5, $6) 
+            RETURNING id, url`,
+            [
+                fileName,
+                req.file.originalname,
+                req.file.mimetype,
+                req.file.size,
+                publicUrl,
+                req.user.id
+            ]
+        );
+
+        res.json({
+            success: true,
+            file: {
+                id: result.rows[0].id,
+                url: result.rows[0].url,
+                originalName: req.file.originalname
+            }
+        });
+    } catch (error) {
+        console.error('Erreur upload:', error);
+        res.status(500).json({ error: 'Échec de l\'upload' });
+    }
+});
+
+// Supprimer une image
+app.delete('/api/upload/image/:fileId', authenticateToken, async (req, res) => {
+    try {
+        // Vérifier que l'utilisateur possède le fichier
+        const fileResult = await pool.query(
+            'SELECT filename, uploaded_by FROM uploaded_files WHERE id = $1',
+            [req.params.fileId]
+        );
+
+        if (fileResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Fichier non trouvé' });
+        }
+
+        const file = fileResult.rows[0];
+        
+        // Vérifier les permissions
+        if (file.uploaded_by !== req.user.id && req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Non autorisé' });
+        }
+
+        // Supprimer de Supabase Storage
+        const { error: deleteError } = await supabase
+            .storage
+            .from('spot-images')
+            .remove([file.filename]);
+
+        if (deleteError) {
+            console.error('Erreur suppression Supabase:', deleteError);
+        }
+
+        // Supprimer de la base de données
+        await pool.query('DELETE FROM uploaded_files WHERE id = $1', [req.params.fileId]);
+
+        res.json({ success: true, message: 'Fichier supprimé' });
+    } catch (error) {
+        console.error('Erreur suppression:', error);
+        res.status(500).json({ error: 'Échec de la suppression' });
+    }
+});
+
+// Fonction helper pour extraire l'ID YouTube
+function extractYouTubeId(url) {
+    const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+    const match = url.match(regex);
+    return match ? match[1] : null;
+}
+
+// Valider et formater l'URL YouTube
+app.post('/api/validate-youtube', async (req, res) => {
+    try {
+        const { url } = req.body;
+        const videoId = extractYouTubeId(url);
+        
+        if (!videoId) {
+            return res.status(400).json({ error: 'URL YouTube invalide' });
+        }
+
+        res.json({
+            valid: true,
+            videoId: videoId,
+            embedUrl: `https://www.youtube.com/embed/${videoId}`,
+            thumbnailUrl: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Erreur de validation' });
+    }
+});
 
 // Load environment variables
 dotenv.config();

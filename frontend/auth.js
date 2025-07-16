@@ -196,26 +196,31 @@ const Auth = {
         const isLoggedIn = this.isLoggedIn();
         const isAdmin = this.isAdmin();
         
-        // Update auth buttons
-        const loginBtn = document.getElementById('loginBtn');
-        const logoutBtn = document.getElementById('logoutBtn');
-        const userInfo = document.getElementById('userInfo');
-        const adminPanel = document.getElementById('adminPanel');
-        
-        if (loginBtn) loginBtn.style.display = isLoggedIn ? 'none' : 'flex';
-        if (logoutBtn) logoutBtn.style.display = isLoggedIn ? 'flex' : 'none';
-        
-        if (userInfo && isLoggedIn) {
-            userInfo.style.display = 'flex';
-            userInfo.querySelector('.user-email').textContent = this.currentUser.email;
-            userInfo.querySelector('.user-role').textContent = this.currentUser.role;
-        } else if (userInfo) {
-            userInfo.style.display = 'none';
-        }
-        
-        // Show/hide admin features
-        if (adminPanel) {
-            adminPanel.style.display = isAdmin ? 'flex' : 'none';
+        // Utiliser la nouvelle fonction dropdown si elle existe
+        if (window.initAccountDropdown) {
+            window.initAccountDropdown();
+        } else {
+            // Fallback sur l'ancien système
+            const loginBtn = document.getElementById('loginBtn');
+            const logoutBtn = document.getElementById('logoutBtn');
+            const userInfo = document.getElementById('userInfo');
+            const adminPanel = document.getElementById('adminPanel');
+            
+            if (loginBtn) loginBtn.style.display = isLoggedIn ? 'none' : 'flex';
+            if (logoutBtn) logoutBtn.style.display = isLoggedIn ? 'flex' : 'none';
+            
+            if (userInfo && isLoggedIn) {
+                userInfo.style.display = 'flex';
+                userInfo.querySelector('.user-email').textContent = this.currentUser.email;
+                userInfo.querySelector('.user-role').textContent = this.currentUser.role;
+            } else if (userInfo) {
+                userInfo.style.display = 'none';
+            }
+            
+            // Show/hide admin features
+            if (adminPanel) {
+                adminPanel.style.display = isAdmin ? 'flex' : 'none';
+            }
         }
         
         // Show/hide admin controls on spots

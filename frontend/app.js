@@ -1409,6 +1409,262 @@ function addTipInput() {
     container.appendChild(input);
 }
 
+// Ajoutez ces fonctions dans app.js après les autres fonctions
+
+// Initialiser la zone de drag & drop pour les images
+function initImageDropZone() {
+    const dropZones = document.querySelectorAll('.image-drop-zone');
+    
+    dropZones.forEach(zone => {
+        zone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            zone.classList.add('drag-over');
+        });
+        
+        zone.addEventListener('dragleave', () => {
+            zone.classList.remove('drag-over');
+        });
+        
+        zone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            zone.classList.remove('drag-over');
+            
+            const files = Array.from(e.dataTransfer.files);
+            const imageFiles = files.filter(file => file.type.startsWith('image/'));
+            
+            if (imageFiles.length > 0) {
+                handleImageFiles(imageFiles, zone);
+            } else {
+                alert('Veuillez déposer uniquement des images');
+            }
+        });
+    });
+}
+
+// Gérer l'upload des fichiers images
+async function handleImageFiles(files, dropZone) {
+    const container = dropZone.closest('.media-input-group').querySelector('.uploaded-images');
+    
+    for (const file of files) {
+        // Vérifier la taille
+        if (file.size > 5 * 1024 * 1024) {
+            alert(`${file.name} est trop grand. Maximum 5MB par image.`);
+            continue;
+        }
+        
+        // Créer l'aperçu
+        const preview = createImagePreview(file);
+        container.appendChild(preview);
+        
+        // Upload le fichier
+        try {
+            const uploadedFile = await uploadImage(file);
+            
+            // Mettre à jour l'aperçu avec l'URL finale
+            preview.dataset.url = uploadedFile.url;
+            preview.dataset.fileId = uploadedFile.id;
+            preview.querySelector('.upload-status').innerHTML = '✅';
+            
+            // Ajouter l'URL au formulaire
+            addMediaToForm(uploadedFile.url, 'image', file.name);
+        } catch (error) {
+            preview.querySelector('.upload-status').innerHTML = '❌';
+            console.error('Erreur upload:', error);
+        }
+    }
+}
+
+// Créer l'aperçu de l'image
+function createImagePreview(file) {
+    const div = document.createElement('div');
+    div.className = 'image-preview';
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        div.innerHTML = `
+            <img src="${e.target.result}" alt="${file.name}">
+            <span class="upload-status">⏳</span>
+            <button type="button" class="remove-image" onclick="removeImage(this)">×</button>
+        `;
+    };
+    reader.readAsDataURL(file);
+    
+    return div;
+}
+
+// Upload une image vers le serveur
+async function uploadImage(file) {
+    const formData = new FormData();
+    formData.append('image', file);
+    
+    const response = await fetch(`${API.BASE_URL}/upload/image`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${Auth.getToken()}`
+        },
+        body: formData
+    });
+    
+    if (!response.ok) {
+        throw new Error('Upload échoué');
+    }
+    
+    const data = await response.json();
+    return data.file;
+}
+
+// Supprimer une image
+async function removeImage(button) {
+    const preview = button.closest('.image-preview');
+    const fileId = preview.dataset.fileId;
+    
+    if (fileId) {
+        // Supprimer du serveur
+        try {
+            await fetch(`${API.BASE_URL}/upload/image/${fileId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${Auth.getToken()}`
+                }
+            });
+        } catch (error) {
+            console.error('Erreur suppression:', error);
+        }
+    }
+    
+    preview.remove();
+}
+
+// Ajouter le média au formulaire
+function addMediaToForm(url, type, caption = '') {
+    const container = document.getElementById('hiddenMediaInputs');
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'uploadedMedia[]';
+    input.value = JSON.stringify({ url, type, caption });
+    container.appendChild(input);
+}
+
+// Valider et formater l'URL YouTube
+async function validateYouTubeUrl(url) {
+    try {
+        const response = await fetch(`${API.BASE_URL}/validate-youtube`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${Auth.getToken()}`
+            },
+            body: JSON.stringify({ url })
+        });
+        
+        if (!response.ok) {
+            throw new Error('URL invalide');
+        }
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Erreur validation YouTube:', error);
+        return null;
+    }
+}
+
+// Ajouter un champ pour vidéo YouTube
+function addYouTubeInput() {
+    const container = document.getElementById('mediaInputs');
+    const div = document.createElement('div');
+    div.className = 'media-input-group youtube-input-group';
+    div.innerHTML = `
+        <div style="margin-bottom: 10px;">
+            <label style="color: white; font-size: 12px; display: block; margin-bottom: 5px;">Vidéo YouTube</label>
+            <div style="display: flex; gap: 10px;">
+                <input type="url" 
+                       placeholder="Collez l'URL YouTube ici" 
+                       class="form-input youtube-url-input" 
+                       style="flex: 1;">
+                <button type="button" 
+                        onclick="validateYouTube(this)" 
+                        class="filter-btn">
+                    Valider
+                </button>
+            </div>
+            <div class="youtube-preview" style="margin-top: 10px; display: none;">
+                <iframe width="100%" height="200" frameborder="0" allowfullscreen></iframe>
+                <input type="text" placeholder="Description (optionnel)" class="form-input" style="margin-top: 5px;">
+            </div>
+        </div>
+        <button type="button" onclick="this.parentElement.remove()" class="filter-btn" style="margin-left: 10px;">Supprimer</button>
+    `;
+    container.appendChild(div);
+}
+
+// Valider et afficher l'aperçu YouTube
+async function validateYouTube(button) {
+    const group = button.closest('.youtube-input-group');
+    const urlInput = group.querySelector('.youtube-url-input');
+    const preview = group.querySelector('.youtube-preview');
+    const iframe = preview.querySelector('iframe');
+    
+    const url = urlInput.value.trim();
+    if (!url) {
+        alert('Veuillez entrer une URL YouTube');
+        return;
+    }
+    
+    button.disabled = true;
+    button.textContent = 'Validation...';
+    
+    try {
+        const result = await validateYouTubeUrl(url);
+        
+        if (result && result.valid) {
+            iframe.src = result.embedUrl;
+            preview.style.display = 'block';
+            preview.dataset.videoId = result.videoId;
+            preview.dataset.thumbnailUrl = result.thumbnailUrl;
+            
+            // Désactiver l'input URL
+            urlInput.disabled = true;
+            button.textContent = '✅';
+        } else {
+            alert('URL YouTube invalide');
+            button.textContent = 'Valider';
+        }
+    } catch (error) {
+        alert('Erreur lors de la validation');
+        button.textContent = 'Valider';
+    } finally {
+        button.disabled = false;
+    }
+}
+
+// Collecter tous les médias du formulaire
+function collectMediaFromForm(form) {
+    const media = [];
+    
+    // Images uploadées
+    const uploadedImages = form.querySelectorAll('.image-preview[data-url]');
+    uploadedImages.forEach(preview => {
+        media.push({
+            type: 'image',
+            url: preview.dataset.url,
+            caption: preview.querySelector('input[type="text"]')?.value || ''
+        });
+    });
+    
+    // Vidéos YouTube
+    const youtubeVideos = form.querySelectorAll('.youtube-preview[data-video-id]');
+    youtubeVideos.forEach(preview => {
+        media.push({
+            type: 'video',
+            url: `https://www.youtube.com/watch?v=${preview.dataset.videoId}`,
+            thumbnail: preview.dataset.thumbnailUrl,
+            caption: preview.querySelector('input[type="text"]')?.value || ''
+        });
+    });
+    
+    return media;
+}
+
 // Rendre les fonctions globales
 window.updateFavoriteUI = updateFavoriteUI;
 window.toggleFavorite = toggleFavorite;
