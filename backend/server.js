@@ -15,7 +15,7 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 
 // Security middleware
 app.use(helmet({
@@ -33,10 +33,20 @@ app.use(express.urlencoded({ extended: true }));
 // Servir les fichiers du frontend
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-// Rate limiting
+// Rate limiting avec configuration correcte pour Render
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100
+    max: 100,
+    // Configuration spécifique pour Render.com
+    keyGenerator: function (req) {
+        // Utiliser l'en-tête X-Forwarded-For si disponible
+        return req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    },
+    handler: function (req, res) {
+        res.status(429).json({
+            error: 'Too many requests, please try again later.'
+        });
+    }
 });
 
 app.use('/api/', limiter);

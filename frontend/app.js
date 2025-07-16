@@ -30,8 +30,11 @@ async function initApp() {
         
         // Initialize event listeners
         initEventListeners();
-        // Dans initApp(), après initEventListeners()
-        addFavoritesFilter();
+        
+        // Add favorites filter button if user is logged in
+        setTimeout(() => {
+            addFavoritesFilter();
+        }, 100);
         
     } catch (error) {
         console.error('Failed to initialize app:', error);
@@ -760,6 +763,7 @@ function exportData(format) {
 // Create rich media popup content
 function createPopupContent(spot) {
     const isAdmin = Auth.isAdmin();
+    const isLoggedIn = Auth.isLoggedIn();
     
     const mediaHTML = spot.media && spot.media.length > 0 ? `
         <div class="media-gallery" id="gallery-${spot.id}">
@@ -825,6 +829,15 @@ function createPopupContent(spot) {
         </div>
     ` : '';
 
+    // Bouton favori pour les utilisateurs connectés
+    const favoriteButton = isLoggedIn ? `
+        <button class="action-btn ${spot.isFavorite ? 'favorite' : ''}" 
+                onclick="toggleFavorite(${spot.id}); return false;">
+            <span>${spot.isFavorite ? '❤️' : '🤍'}</span> 
+            ${spot.isFavorite ? 'Favorited' : 'Add to Favorites'}
+        </button>
+    ` : '';
+
     return `
         <div class="popup-content">
             ${mediaHTML}
@@ -845,6 +858,7 @@ function createPopupContent(spot) {
                 <p class="popup-description">${Utils.escapeHtml(spot.description || '')}</p>
                 ${tipsHTML}
                 <div class="popup-actions">
+                    ${favoriteButton}
                     <a href="#" class="action-btn" onclick="getDirections(${spot.lat}, ${spot.lng}); return false;">
                         <span>🧭</span> Get Directions
                     </a>
@@ -979,7 +993,8 @@ function renderSpotCards(spotsToRender) {
 
     spotsToRender.forEach(spot => {
         const card = document.createElement('div');
-        card.className = `spot-card ${spot.editorPick ? 'editor-pick' : ''}`;
+        card.className = `spot-card ${spot.editorPick ? 'editor-pick' : ''} ${spot.isFavorite ? 'favorite' : ''}`;
+        card.setAttribute('data-spot-id', spot.id);
         
         const isOpen = spot.hours ? Utils.isOpenNow(spot.hours) : true;
         const priceIndicator = Utils.formatPrice(spot.price);
@@ -995,7 +1010,10 @@ function renderSpotCards(spotsToRender) {
             </div>
         ` : '';
         
+        const favoriteIndicator = spot.isFavorite ? '<span class="favorite-indicator">❤️</span>' : '';
+        
         card.innerHTML = `
+            ${favoriteIndicator}
             ${adminControls}
             ${spot.editorPick ? '<div class="editor-badge">⭐ Editor\'s Pick</div>' : ''}
             <h3>${spot.icon} ${Utils.escapeHtml(spot.name)}</h3>
@@ -1210,3 +1228,192 @@ window.playVideo = playVideo;
 window.getDirections = getDirections;
 window.shareLocation = shareLocation;
 window.handleAddSpot = handleAddSpot;
+
+// Ajoutez ces fonctions dans app.js (après les autres fonctions)
+
+// Fonction pour mettre à jour l'UI des favoris
+function updateFavoriteUI(spotId, isFavorite) {
+    // Mettre à jour le marqueur sur la carte
+    markers.forEach(marker => {
+        const markerLatLng = marker.getLatLng();
+        const spot = spots.find(s => s.id === spotId);
+        if (spot && markerLatLng.lat === spot.lat && markerLatLng.lng === spot.lng) {
+            const iconClass = `custom-marker ${spot.editorPick ? 'editor-pick' : ''} ${isFavorite ? 'favorite' : ''}`;
+            const markerHtml = `<div class="${iconClass}">${spot.icon}${isFavorite ? '<span class="favorite-star">⭐</span>' : ''}</div>`;
+            
+            marker.setIcon(L.divIcon({
+                html: markerHtml,
+                className: 'custom-div-icon',
+                iconSize: [40, 40],
+                iconAnchor: [20, 40],
+                popupAnchor: [0, -40]
+            }));
+        }
+    });
+    
+    // Mettre à jour les cartes
+    const card = document.querySelector(`.spot-card[data-spot-id="${spotId}"]`);
+    if (card) {
+        if (isFavorite) {
+            card.classList.add('favorite');
+        } else {
+            card.classList.remove('favorite');
+        }
+    }
+}
+
+// Fonction pour toggler un favori
+async function toggleFavorite(spotId) {
+    if (!Auth.isLoggedIn()) {
+        Auth.showLoginModal();
+        return;
+    }
+    
+    try {
+        const isFavorite = await API.toggleFavorite(spotId);
+        
+        if (window.Notifications) {
+            Notifications.success(isFavorite ? 'Added to favorites!' : 'Removed from favorites');
+        }
+    } catch (error) {
+        if (window.Notifications) {
+            Notifications.error('Failed to update favorite');
+        }
+    }
+}
+
+// Ajouter un bouton de filtre pour les favoris
+function addFavoritesFilter() {
+    const filterButtons = document.querySelector('.filter-buttons');
+    if (filterButtons && Auth.isLoggedIn()) {
+        // Vérifier si le bouton n'existe pas déjà
+        if (!document.querySelector('.filter-btn.favorites-btn')) {
+            const favoritesBtn = document.createElement('button');
+            favoritesBtn.className = 'filter-btn favorites-btn';
+            favoritesBtn.innerHTML = '❤️ My Favorites';
+            favoritesBtn.onclick = () => filterFavorites();
+            filterButtons.appendChild(favoritesBtn);
+        }
+    }
+}
+
+// Fonction pour filtrer les favoris
+async function filterFavorites() {
+    if (!Auth.isLoggedIn()) {
+        Auth.showLoginModal();
+        return;
+    }
+    
+    // Mettre à jour les boutons
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+    
+    try {
+        // Charger uniquement les favoris
+        const data = await API.getSpots({ favoritesOnly: true });
+        const favoriteSpots = data.spots.map(spot => API.formatSpotForFrontend(spot));
+        
+        // Mettre à jour la carte et les cartes
+        addSpotsToMap(favoriteSpots);
+        renderSpotCards(favoriteSpots);
+        
+        if (favoriteSpots.length === 0 && window.Notifications) {
+            Notifications.info('You haven\'t added any favorites yet');
+        }
+    } catch (error) {
+        console.error('Failed to load favorites:', error);
+        if (window.Notifications) {
+            Notifications.error('Failed to load favorites');
+        }
+    }
+}
+
+// Ajouter ces fonctions pour la recherche d'adresse
+async function searchAddress() {
+    const addressInput = document.getElementById('addressSearch');
+    const address = addressInput.value.trim();
+    
+    if (!address) {
+        alert('Please enter an address');
+        return;
+    }
+    
+    // Afficher un état de chargement
+    addressInput.disabled = true;
+    const searchBtn = event.target;
+    const originalText = searchBtn.textContent;
+    searchBtn.textContent = 'Searching...';
+    searchBtn.disabled = true;
+    
+    try {
+        const result = await API.geocodeAddress(address);
+        
+        // Remplir les champs de coordonnées
+        document.getElementById('latInput').value = result.lat;
+        document.getElementById('lngInput').value = result.lng;
+        
+        // Afficher l'adresse trouvée
+        showImportStatus(`Found: ${result.display_name}`, false);
+        
+        // Optionnel : centrer la carte sur cette position
+        if (window.map) {
+            map.setView([result.lat, result.lng], 16);
+            
+            // Ajouter un marqueur temporaire
+            const tempMarker = L.marker([result.lat, result.lng])
+                .addTo(map)
+                .bindPopup('New spot location')
+                .openPopup();
+            
+            // Supprimer le marqueur après 5 secondes
+            setTimeout(() => map.removeLayer(tempMarker), 5000);
+        }
+    } catch (error) {
+        showImportStatus('Address not found. Please try a different address or enter coordinates manually.', true);
+    } finally {
+        addressInput.disabled = false;
+        searchBtn.textContent = originalText;
+        searchBtn.disabled = false;
+    }
+}
+
+// Fonction pour ajouter un champ média
+function addMediaInput() {
+    const container = document.getElementById('mediaInputs');
+    const div = document.createElement('div');
+    div.className = 'media-input-group';
+    div.style.marginBottom = '10px';
+    div.innerHTML = `
+        <input type="url" name="mediaUrl[]" placeholder="Image/Video URL" class="form-input" style="margin-bottom: 5px;">
+        <input type="text" name="mediaCaption[]" placeholder="Caption (optional)" class="form-input" style="margin-bottom: 5px;">
+        <select name="mediaType[]" class="form-input">
+            <option value="image">Image</option>
+            <option value="video">Video</option>
+        </select>
+        <button type="button" onclick="this.parentElement.remove()" class="filter-btn" style="margin-left: 10px;">Remove</button>
+    `;
+    container.appendChild(div);
+}
+
+// Fonction pour ajouter un champ tip
+function addTipInput() {
+    const container = document.getElementById('tipsInputs');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'tips[]';
+    input.placeholder = 'Add a helpful tip';
+    input.className = 'form-input';
+    input.style.marginBottom = '5px';
+    container.appendChild(input);
+}
+
+// Rendre les fonctions globales
+window.updateFavoriteUI = updateFavoriteUI;
+window.toggleFavorite = toggleFavorite;
+window.addFavoritesFilter = addFavoritesFilter;
+window.filterFavorites = filterFavorites;
+window.searchAddress = searchAddress;
+window.addMediaInput = addMediaInput;
+window.addTipInput = addTipInput;
