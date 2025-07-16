@@ -311,8 +311,7 @@ const API = {
     // Get user's favorites
     getFavorites: async function() {
         return this.request('/favorites');
-    }
-};
+    },
 // ===== GEOCODING API =====
     
     // Fonction de géocodage
@@ -486,7 +485,8 @@ const API = {
         
         return results;
     }
-    // Health check on startup
+};
+// Health check on startup (PLACÉ À L’EXTÉRIEUR DE L'OBJET API)
 window.addEventListener('load', async () => {
     const isHealthy = await API.healthCheck();
     if (!isHealthy) {
@@ -497,6 +497,4 @@ window.addEventListener('load', async () => {
     }
 });
 
-// À la fin de api.js, assurez-vous que cette ligne existe :
 window.API = API;
-};
