@@ -65,7 +65,7 @@
                 <div class="form-group">
                     <label for="loginPassword">Password</label>
                     <input type="password" id="loginPassword" name="password" required 
-                           placeholder="••••••••" class="form-input">
+                           placeholder="••••••••" autocomplete="current-password" class="form-input">
                 </div>
                 
                 <div class="error-message" style="display: none;"></div>
@@ -101,7 +101,7 @@
                 <div class="form-group">
                     <label for="confirmPassword">Confirm Password</label>
                     <input type="password" id="confirmPassword" name="confirmPassword" required 
-                           placeholder="••••••••" class="form-input" minlength="6">
+                           placeholder="••••••••" autocomplete="new-password" class="form-input" minlength="6">
                 </div>
                 
                 <div class="error-message" style="display: none;"></div>
@@ -353,12 +353,11 @@
     
     <!-- API Client -->
     <script src="api.js"></script>
+        <!-- Main App JS -->
+    <script src="app.js"></script>
     
     <!-- App Data 
     <script src="data.js"></script>-->
-    
-    <!-- Main App JS -->
-    <script src="app.js"></script>
     
     <!-- Admin Functions -->
     <script src="admin.js"></script>

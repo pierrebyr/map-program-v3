@@ -275,6 +275,115 @@ const API = {
             throw error;
         }
     },
+    // ===== FAVORITES API =====
+    
+    // Toggle favorite status
+    toggleFavorite: async function(spotId) {
+        const spot = spots.find(s => s.id === spotId);
+        if (!spot) return;
+        
+        try {
+            if (spot.isFavorite) {
+                await this.request(`/favorites/${spotId}`, { method: 'DELETE' });
+                spot.isFavorite = false;
+            } else {
+                await this.request(`/favorites/${spotId}`, { method: 'POST' });
+                spot.isFavorite = true;
+            }
+            
+            // Mettre à jour l'UI
+            if (typeof updateFavoriteUI === 'function') {
+                updateFavoriteUI(spotId, spot.isFavorite);
+            }
+            
+            // Clear cache
+            if (window.Cache) {
+                Cache.clear();
+            }
+            
+            return spot.isFavorite;
+        } catch (error) {
+            console.error('Toggle favorite error:', error);
+            throw error;
+        }
+    },
+    
+    // Get user's favorites
+    getFavorites: async function() {
+        return this.request('/favorites');
+    }
+};
+// ===== GEOCODING API =====
+    
+    // Fonction de géocodage
+    geocodeAddress: async function(address) {
+        try {
+            // Utiliser Nominatim (OpenStreetMap) pour le géocodage gratuit
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`;
+            
+            const response = await fetch(url, {
+                headers: {
+                    'Accept': 'application/json',
+                    'User-Agent': 'LiquidGlassMap/1.0' // Requis par Nominatim
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error('Geocoding failed');
+            }
+            
+            const data = await response.json();
+            
+            if (data.length === 0) {
+                throw new Error('Address not found');
+            }
+            
+            const result = data[0];
+            return {
+                lat: parseFloat(result.lat),
+                lng: parseFloat(result.lon),
+                display_name: result.display_name,
+                address: {
+                    road: result.address?.road,
+                    city: result.address?.city || result.address?.town || result.address?.village,
+                    state: result.address?.state,
+                    country: result.address?.country,
+                    postcode: result.address?.postcode
+                }
+            };
+        } catch (error) {
+            console.error('Geocoding error:', error);
+            throw new Error('Failed to geocode address: ' + error.message);
+        }
+    },
+    
+    // Fonction de géocodage inverse (coordonnées vers adresse)
+    reverseGeocode: async function(lat, lng) {
+        try {
+            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
+            
+            const response = await fetch(url, {
+                headers: {
+                    'Accept': 'application/json',
+                    'User-Agent': 'LiquidGlassMap/1.0'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error('Reverse geocoding failed');
+            }
+            
+            const data = await response.json();
+            
+            return {
+                display_name: data.display_name,
+                address: data.address
+            };
+        } catch (error) {
+            console.error('Reverse geocoding error:', error);
+            return null;
+        }
+    },
     
     // ===== HELPER FUNCTIONS =====
     
@@ -377,80 +486,7 @@ const API = {
         
         return results;
     }
-};
-// ===== GEOCODING API =====
-    
-    // Fonction de géocodage
-    geocodeAddress: async function(address) {
-        try {
-            // Utiliser Nominatim (OpenStreetMap) pour le géocodage gratuit
-            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`;
-            
-            const response = await fetch(url, {
-                headers: {
-                    'Accept': 'application/json',
-                    'User-Agent': 'LiquidGlassMap/1.0' // Requis par Nominatim
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error('Geocoding failed');
-            }
-            
-            const data = await response.json();
-            
-            if (data.length === 0) {
-                throw new Error('Address not found');
-            }
-            
-            const result = data[0];
-            return {
-                lat: parseFloat(result.lat),
-                lng: parseFloat(result.lon),
-                display_name: result.display_name,
-                address: {
-                    road: result.address?.road,
-                    city: result.address?.city || result.address?.town || result.address?.village,
-                    state: result.address?.state,
-                    country: result.address?.country,
-                    postcode: result.address?.postcode
-                }
-            };
-        } catch (error) {
-            console.error('Geocoding error:', error);
-            throw new Error('Failed to geocode address: ' + error.message);
-        }
-    },
-    
-    // Fonction de géocodage inverse (coordonnées vers adresse)
-    reverseGeocode: async function(lat, lng) {
-        try {
-            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
-            
-            const response = await fetch(url, {
-                headers: {
-                    'Accept': 'application/json',
-                    'User-Agent': 'LiquidGlassMap/1.0'
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error('Reverse geocoding failed');
-            }
-            
-            const data = await response.json();
-            
-            return {
-                display_name: data.display_name,
-                address: data.address
-            };
-        } catch (error) {
-            console.error('Reverse geocoding error:', error);
-            return null;
-        }
-    },
-
-// Health check on startup
+    // Health check on startup
 window.addEventListener('load', async () => {
     const isHealthy = await API.healthCheck();
     if (!isHealthy) {
@@ -460,202 +496,7 @@ window.addEventListener('load', async () => {
         }
     }
 });
-// Ajoutez ces fonctions dans votre api.js
 
-// ===== FAVORITES API =====
-    
-    // Toggle favorite status
-    toggleFavorite: async function(spotId) {
-        const spot = spots.find(s => s.id === spotId);
-        if (!spot) return;
-        
-        try {
-            if (spot.isFavorite) {
-                await this.request(`/favorites/${spotId}`, { method: 'DELETE' });
-                spot.isFavorite = false;
-            } else {
-                await this.request(`/favorites/${spotId}`, { method: 'POST' });
-                spot.isFavorite = true;
-            }
-            
-            // Mettre à jour l'UI
-            if (typeof updateFavoriteUI === 'function') {
-                updateFavoriteUI(spotId, spot.isFavorite);
-            }
-            
-            // Clear cache
-            if (window.Cache) {
-                Cache.clear();
-            }
-            
-            return spot.isFavorite;
-        } catch (error) {
-            console.error('Toggle favorite error:', error);
-            throw error;
-        }
-    },
-    
-    // Get user's favorites
-    getFavorites: async function() {
-        return this.request('/favorites');
-    }
-};
-// Ajoutez ceci dans votre fichier app.js :
-
-// Fonction pour mettre à jour l'UI des favoris
-function updateFavoriteUI(spotId, isFavorite) {
-    // Mettre à jour le marqueur sur la carte
-    markers.forEach(marker => {
-        const markerLatLng = marker.getLatLng();
-        const spot = spots.find(s => s.id === spotId);
-        if (spot && markerLatLng.lat === spot.lat && markerLatLng.lng === spot.lng) {
-            const iconClass = `custom-marker ${spot.editorPick ? 'editor-pick' : ''} ${isFavorite ? 'favorite' : ''}`;
-            const markerHtml = `<div class="${iconClass}">${spot.icon}${isFavorite ? '<span class="favorite-star">⭐</span>' : ''}</div>`;
-            
-            marker.setIcon(L.divIcon({
-                html: markerHtml,
-                className: 'custom-div-icon',
-                iconSize: [40, 40],
-                iconAnchor: [20, 40],
-                popupAnchor: [0, -40]
-            }));
-        }
-    });
-    
-    // Mettre à jour les cartes
-    const card = document.querySelector(`.spot-card[data-spot-id="${spotId}"]`);
-    if (card) {
-        if (isFavorite) {
-            card.classList.add('favorite');
-        } else {
-            card.classList.remove('favorite');
-        }
-    }
-}
-
-// Fonction pour toggler un favori
-async function toggleFavorite(spotId) {
-    if (!Auth.isLoggedIn()) {
-        Auth.showLoginModal();
-        return;
-    }
-    
-    try {
-        const isFavorite = await API.toggleFavorite(spotId);
-        
-        if (window.Notifications) {
-            Notifications.success(isFavorite ? 'Added to favorites!' : 'Removed from favorites');
-        }
-    } catch (error) {
-        if (window.Notifications) {
-            Notifications.error('Failed to update favorite');
-        }
-    }
-}
-
-// Modifier la fonction createPopupContent pour ajouter le bouton favori
-function createPopupContent(spot) {
-    const isAdmin = Auth.isAdmin();
-    const isLoggedIn = Auth.isLoggedIn();
-    
-    // ... (code existant) ...
-    
-    // Ajouter le bouton favori dans les actions
-    const favoriteButton = isLoggedIn ? `
-        <button class="action-btn ${spot.isFavorite ? 'favorite' : ''}" 
-                onclick="toggleFavorite(${spot.id}); return false;">
-            <span>${spot.isFavorite ? '❤️' : '🤍'}</span> 
-            ${spot.isFavorite ? 'Favorited' : 'Add to Favorites'}
-        </button>
-    ` : '';
-    
-    // Modifier la section popup-actions
-    const actionsHTML = `
-        <div class="popup-actions">
-            ${favoriteButton}
-            <a href="#" class="action-btn" onclick="getDirections(${spot.lat}, ${spot.lng}); return false;">
-                <span>🧭</span> Get Directions
-            </a>
-            ${spot.relatedArticle ? `
-                <a href="${spot.relatedArticle.url}" class="action-btn primary">
-                    <span>📖</span> Read Article
-                </a>
-            ` : ''}
-        </div>
-    `;
-    
-    // ... (reste du code) ...
-}
-
-// Modifier la fonction renderSpotCards pour ajouter l'indicateur de favori
-function renderSpotCards(spotsToRender) {
-    const panel = document.getElementById('spotsPanel');
-    panel.innerHTML = '';
-
-    spotsToRender.forEach(spot => {
-        const card = document.createElement('div');
-        card.className = `spot-card ${spot.editorPick ? 'editor-pick' : ''} ${spot.isFavorite ? 'favorite' : ''}`;
-        card.setAttribute('data-spot-id', spot.id);
-        
-        // ... (code existant) ...
-        
-        // Ajouter l'indicateur de favori
-        const favoriteIndicator = spot.isFavorite ? '<span class="favorite-indicator">❤️</span>' : '';
-        
-        card.innerHTML = `
-            ${favoriteIndicator}
-            ${adminControls}
-            ${spot.editorPick ? '<div class="editor-badge">⭐ Editor\'s Pick</div>' : ''}
-            <!-- ... reste du HTML ... -->
-        `;
-        
-        // ... (reste du code) ...
-    });
-}
-
-// Ajouter un bouton de filtre pour les favoris
-function addFavoritesFilter() {
-    const filterButtons = document.querySelector('.filter-buttons');
-    if (filterButtons && Auth.isLoggedIn()) {
-        const favoritesBtn = document.createElement('button');
-        favoritesBtn.className = 'filter-btn';
-        favoritesBtn.innerHTML = '❤️ My Favorites';
-        favoritesBtn.onclick = () => filterFavorites();
-        filterButtons.appendChild(favoritesBtn);
-    }
-}
-
-// Fonction pour filtrer les favoris
-async function filterFavorites() {
-    if (!Auth.isLoggedIn()) {
-        Auth.showLoginModal();
-        return;
-    }
-    
-    // Mettre à jour les boutons
-    document.querySelectorAll('.filter-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    event.target.classList.add('active');
-    
-    try {
-        // Charger uniquement les favoris
-        const data = await API.getSpots({ favoritesOnly: true });
-        const favoriteSpots = data.spots.map(spot => API.formatSpotForFrontend(spot));
-        
-        // Mettre à jour la carte et les cartes
-        addSpotsToMap(favoriteSpots);
-        renderSpotCards(favoriteSpots);
-        
-        if (favoriteSpots.length === 0 && window.Notifications) {
-            Notifications.info('You haven\'t added any favorites yet');
-        }
-    } catch (error) {
-        console.error('Failed to load favorites:', error);
-        if (window.Notifications) {
-            Notifications.error('Failed to load favorites');
-        }
-    }
-}
 // À la fin de api.js, assurez-vous que cette ligne existe :
 window.API = API;
+};
